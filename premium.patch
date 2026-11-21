@@ -122,20 +122,22 @@ index 0000000..bc07c89
 +});
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..4970065
+index 0000000..6dfda4c
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,57 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
 +import { buttonItem, showModal, showToast, overlayPanelItemListRenderer, overlayMessageRenderer } from '../ui/ytUI.js';
 +
-+const BASE = 'https://shadowzevax.github.io/premium/rixius/dist/v1/';
++const SCRIPT_URL = 'https://cdn.jsdelivr.net/gh/shadowzevax/premium@main/userScript.js';
++// version.json via raw GitHub: ~5 min cache, so new builds are detected quickly.
++const VERSION_URL = 'https://raw.githubusercontent.com/shadowzevax/premium/main/rixius/dist/v1/version.json';
 +export const RIXIUS_BUILD = '__RIXIUS_BUILD__';
 +
 +function fetchLatest() {
-+    return fetch(BASE + 'version.json?t=' + Date.now(), { cache: 'no-store' }).then(r => {
++    return fetch(VERSION_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(r => {
 +        if (!r.ok) throw new Error('HTTP ' + r.status);
 +        return r.json();
 +    });
@@ -143,8 +145,13 @@ index 0000000..4970065
 +
 +function applyUpdate() {
 +    showToast('Rixius', 'Actualizando...');
-+    // Refresh the cached script, then restart the web app so the new version loads.
-+    fetch(BASE + 'userScript.js', { cache: 'reload' }).catch(() => {}).then(() => location.reload());
++    // The engine loads the script with its own URL (+ ?v=...), which the browser caches for days.
++    // Re-download every URL it may use with cache:'reload' so the HTTP cache holds the new build,
++    // then restart the web app.
++    const urls = new Set([SCRIPT_URL]);
++    document.querySelectorAll('script[src*="userScript.js"]').forEach(s => urls.add(s.src));
++    Promise.all([...urls].map(u => fetch(u, { cache: 'reload' }).catch(() => {})))
++        .then(() => location.reload());
 +}
 +
 +export function checkForUpdates(manual) {
