@@ -14,7 +14,7 @@ index 07d9bdf..c6b3b44 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..d663cbd
+index 0000000..5ad4111
 --- /dev/null
 +++ b/mods/features/backToPip.js
 @@ -0,0 +1,56 @@
@@ -66,7 +66,7 @@ index 0000000..d663cbd
 +        if (!configRead('backgroundShowPipWindow')) applyHiddenMode();
 +        if (configRead('backgroundShowToast')) {
 +            showToast(
-+                'TizenTube',
++                'Rixius',
 +                configRead('backgroundShowPipWindow')
 +                    ? 'Video en ventana pequeña. Usa el botón junto a la búsqueda para volver.'
 +                    : 'Video en segundo plano. Usa el botón junto a la búsqueda para volver.'
@@ -74,6 +74,57 @@ index 0000000..d663cbd
 +        }
 +    });
 +}, true);
+diff --git a/mods/features/settingsApplyFix.js b/mods/features/settingsApplyFix.js
+new file mode 100644
+index 0000000..7328048
+--- /dev/null
++++ b/mods/features/settingsApplyFix.js
+@@ -0,0 +1,45 @@
++// Fix "audio but black video" after changing settings while a video is open.
++// When settings change and the player becomes visible again, reload the current video at the
++// same position (re-creates the video surface). Much faster than restarting the app.
++
++import { configChangeEmitter } from '../config.js';
++import { showToast } from '../ui/ytUI.js';
++
++let dirty = false;
++configChangeEmitter.addEventListener('configChange', () => {
++    // Only matters if a video is currently loaded (settings opened from/over the player).
++    const v = document.querySelector('video');
++    if (v && v.currentTime > 0 && !v.ended) dirty = true;
++});
++
++function getPlayerService() {
++    const mappings = Object.values(window._yttv || {}).find(a => a && a.mappings);
++    return mappings ? mappings.get('PlayerService') : null;
++}
++
++function reloadCurrentVideo() {
++    const ps = getPlayerService();
++    const video = document.querySelector('video');
++    if (!ps || !ps.loadedPlaybackConfig || !video || window.isPipPlaying) return;
++    ps.loadedPlaybackConfig.watchEndpoint.startTimeSeconds = Math.floor(video.currentTime);
++    ps.loadVideo(ps.loadedPlaybackConfig);
++    showToast('Rixius', 'Ajustes aplicados');
++}
++
++function watchPlayer() {
++    const player = document.querySelector('ytlr-player');
++    if (!player) return setTimeout(watchPlayer, 1000);
++    let wasEnabled = player.classList.contains('ytLrPlayerEnabled');
++    new MutationObserver(() => {
++        const enabled = player.classList.contains('ytLrPlayerEnabled');
++        if (enabled && !wasEnabled && dirty) {
++            dirty = false;
++            setTimeout(reloadCurrentVideo, 300);
++        }
++        if (!enabled) return (wasEnabled = false);
++        wasEnabled = true;
++    }).observe(player, { attributes: true, attributeFilter: ['class'] });
++}
++
++if (document.readyState === 'complete') watchPlayer();
++else window.addEventListener('load', watchPlayer);
 diff --git a/mods/features/updater.js b/mods/features/updater.js
 index 381fa71..02a1dfc 100644
 --- a/mods/features/updater.js
@@ -88,6 +139,38 @@ index 381fa71..02a1dfc 100644
          const currentEpoch = Math.floor(Date.now() / 1000);
          if (configRead('dontCheckUpdateUntil') > currentEpoch) {
              console.info('Skipping update check until', new Date(configRead('dontCheckUpdateUntil') * 1000).toLocaleString());
+diff --git a/mods/resolveCommand.js b/mods/resolveCommand.js
+index 3d2d10d..6cf597a 100644
+--- a/mods/resolveCommand.js
++++ b/mods/resolveCommand.js
+@@ -236,15 +236,15 @@ function customAction(action, parameters) {
+             window.h5vcc.tizentube.EnterPIP();
+             break;
+         case 'SHOW_TOAST':
+-            showToast('TizenTube', parameters);
++            showToast('Rixius', parameters);
+             break;
+         case 'ADD_TO_QUEUE':
+             window.queuedVideos.videos.push(parameters);
+-            showToast('TizenTube', t('toasts.videoAddedToQueue'));
++            showToast('Rixius', t('toasts.videoAddedToQueue'));
+             break;
+         case 'CLEAR_QUEUE':
+             window.queuedVideos.videos = [];
+-            showToast('TizenTube', t('toasts.videoQueueCleared'));
++            showToast('Rixius', t('toasts.videoQueueCleared'));
+             break;
+         case 'CHECK_FOR_UPDATES':
+             checkForUpdates(true);
+@@ -266,7 +266,7 @@ function customAction(action, parameters) {
+                             signal: 'POPUP_BACK'
+                         }
+                     });
+-                    showToast('TizenTube', t('toasts.feedbackSent'));
++                    showToast('Rixius', t('toasts.feedbackSent'));
+                 })
+                 .catch(err => console.error('TizenTube: failed to send feedback:', err));
+             break;
 diff --git a/mods/rollup.config.js b/mods/rollup.config.js
 index 99ee7b2..34ed090 100644
 --- a/mods/rollup.config.js
@@ -110,11 +193,118 @@ index 99ee7b2..34ed090 100644
          }),
          replace({
              '\uFFFF': '\u0000',
+diff --git a/mods/translations/index.js b/mods/translations/index.js
+index bf3d612..20939a9 100644
+--- a/mods/translations/index.js
++++ b/mods/translations/index.js
+@@ -1,6 +1,16 @@
+ import i18n from 'i18next';
+ import resources from './i18nResources.js';
+ 
++function rebrand(node) {
++  for (const k in node) {
++    if (typeof node[k] === 'string') {
++      node[k] = node[k].replace(/TizenTube Cobalt/g, 'Rixius').replace(/TizenTube/g, 'Rixius').replace(/Reis Can \(reisxd\)|Reis Can|reisxd/g, 'Rixius');
++      if (k === 'madeByText') node[k] = 'Hecho por Rixius';
++    } else if (node[k] && typeof node[k] === 'object') rebrand(node[k]);
++  }
++}
++rebrand(resources);
++
+ InitI18next(window?.yt?.config_?.HL || navigator.language.replace(/(\-.*)/g, ''));
+ 
+ function InitI18next(lng) {
 diff --git a/mods/ui/settings.js b/mods/ui/settings.js
-index 34c07a4..b93b533 100644
+index 34c07a4..f0ffb7b 100644
 --- a/mods/ui/settings.js
 +++ b/mods/ui/settings.js
-@@ -376,6 +376,21 @@ export default function modernUI(update, parameters) {
+@@ -8,85 +8,6 @@ const qrcodes = {};
+ 
+ export default function modernUI(update, parameters) {
+     const settings = [
+-        {
+-            name: t('settings.supportTT.title'),
+-            icon: 'MONEY_HEART',
+-            value: null,
+-            options: {
+-                title: t('settings.supportTT.title'),
+-                subtitle: t('settings.supportTT.subtitle'),
+-                content: scrollPaneRenderer([
+-                    overlayMessageRenderer(t('settings.supportTT.content.1')),
+-                    overlayMessageRenderer(t('settings.supportTT.content.2')),
+-                    overlayMessageRenderer(t('settings.supportTT.content.3')),
+-                    overlayMessageRenderer(t('settings.supportTT.content.4')),
+-                    overlayMessageRenderer(t('settings.supportTT.content.5')),
+-                    overlayMessageRenderer(t('settings.supportTT.content.6'))
+-                ])
+-            }
+-        },
+-        {
+-            name: t('settings.options.socialMedia.title'),
+-            icon: 'PRIVACY_UNLISTED',
+-            value: null,
+-            options: [
+-                {
+-                    name: 'GitHub',
+-                    link: 'https://github.com/reisxd/TizenTube',
+-                },
+-                {
+-                    name: 'YouTube',
+-                    link: 'https://www.youtube.com/@tizenbrew',
+-                },
+-                {
+-                    name: 'Discord',
+-                    link: 'https://discord.gg/m2P7v8Y2qR',
+-                },
+-                {
+-                    name: `Telegram (${t('settings.options.socialMedia.announcements')})`,
+-                    link: 'https://t.me/tizentubecobaltofficial',
+-                },
+-                {
+-                    name: `Telegram (${t('settings.options.socialMedia.group')})`,
+-                    link: 'https://t.me/tizentubeofficial',
+-                },
+-                {
+-                    name: t('settings.options.socialMedia.website'),
+-                    link: 'https://tizentube.6513006.xyz',
+-                },
+-                {
+-                    name: 'Buy Me A Coffee',
+-                    link: 'https://www.buymeacoffee.com/reisxd',
+-                },
+-                {
+-                    name: t('settings.options.socialMedia.githubSponsors'),
+-                    link: 'https://github.com/sponsors/reisxd',
+-                }
+-            ].map((option) => {
+-                if (!qrcodes[option.name]) {
+-                    const qr = qrcode.qrcode(6, 'H');
+-                    qr.addData(option.link);
+-                    qr.make();
+-
+-                    const qrDataImgTag = qr.createImgTag(8, 8);
+-                    const qrDataUrl = qrDataImgTag.match(/src="([^"]+)"/)[1];
+-                    qrcodes[option.name] = qrDataUrl;
+-                }
+-                return {
+-                    name: option.name,
+-                    icon: 'OPEN_IN_NEW',
+-                    value: null,
+-                    options: {
+-                        title: option.name,
+-                        subtitle: option.link,
+-                        content: overlayPanelItemListRenderer([
+-                            overlayMessageRenderer(t('settings.options.socialMedia.qrCodeScanMessage', { name: option.name })),
+-                            QrCodeRenderer(qrcodes[option.name])
+-                        ])
+-                    }
+-                }
+-            })
+-        },
+         {
+             name: t('settings.options.adBlock'),
+             icon: 'DOLLAR_SIGN',
+@@ -376,6 +297,21 @@ export default function modernUI(update, parameters) {
                              name: t('settings.options.videoPlayer.options.patching.options.swapMPWithPIP'),
                              icon: 'CLEAR_COOKIES',
                              value: 'enableSwapMPWithPIP'
@@ -136,15 +326,29 @@ index 34c07a4..b93b533 100644
                          }
                      ]
                  },
+diff --git a/mods/ui/ui.js b/mods/ui/ui.js
+index 52f7547..e20f84a 100644
+--- a/mods/ui/ui.js
++++ b/mods/ui/ui.js
+@@ -123,7 +123,7 @@ function execute_once_dom_loaded() {
+ 
+   try {
+     uiContainer.innerHTML = `
+-<h1>TizenTube Theme Configuration</h1>
++<h1>Rixius</h1>
+ <label for="__barColor">Navigation Bar Color: <input type="text" id="__barColor"/></label>
+ <label for="__routeColor">Main Content Color: <input type="text" id="__routeColor"/></label>
+ <div><small>Sponsor segments skipping - https://sponsor.ajay.app</small></div>
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..0b498e8 100644
+index f8a9c6e..ddb10a4 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
-@@ -19,6 +19,7 @@ import "./features/moreSubtitles.js";
+@@ -19,6 +19,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
 +import "./features/backToPip.js";
++import "./features/settingsApplyFix.js";
  import "./features/preferredVideoQuality.js";
  import "./features/videoQueuing.js";
  import "./features/enableFeatures.js";
