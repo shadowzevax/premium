@@ -78,20 +78,19 @@ index 0000000..5ad4111
 +}, true);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
-index 0000000..47bc80b
+index 0000000..bc07c89
 --- /dev/null
 +++ b/mods/features/fastMode.js
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,38 @@
 +// Rixius fast mode: make remote navigation feel instant on low-end TV boxes.
 +// - shortens UI transitions to 80ms (animations stay visible but no longer delay the remote)
-+// - one-time defaults: no video previews on focused thumbnails, no thumbnail enlarge effect
++// - one-time default: no video previews on focused thumbnails (heavy on TV boxes)
 +// Must be imported before features that read those settings at startup.
 +
 +import { configRead, configWrite, configChangeEmitter } from '../config.js';
 +
 +if (!configRead('rixiusPerfMigrated')) {
 +    configWrite('enablePreviews', false);
-+    configWrite('disableEnlargingThumbnails', true);
 +    configWrite('rixiusPerfMigrated', true);
 +}
 +
