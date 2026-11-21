@@ -17,10 +17,10 @@ index 07d9bdf..af57b22 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..67d585e
+index 0000000..a35357c
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,205 @@
+@@ -0,0 +1,216 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -31,15 +31,17 @@ index 0000000..67d585e
 +
 +// 166 = BrowserBack (Android remote Back in Chromium/Cobalt), 27 = Escape, 8 = Backspace,
 +// 461 / 10009 = Back on LG / Tizen remotes.
-+const BACK_KEYS = [166, 27, 8, 461, 10009];
++const BACK_KEYS = [166, 27, 8, 4, 461, 10009, 65385, 196];
++const BACK_NAMES = ['Escape', 'Esc', 'Backspace', 'GoBack', 'BrowserBack', 'Back', 'XF86Back'];
++const isBack = (evt) => BACK_KEYS.includes(evt.keyCode) || BACK_NAMES.includes(evt.key);
 +let swallowKeyUp = false;
 +let nowPlayingTitle = '';
 +
 +function watching() {
-+    const player = document.querySelector('ytlr-player');
++    // Simple and robust: a video is actually playing (previews are disabled, so a playing
++    // video means the player is open) and we're not already in mini player.
 +    const video = document.querySelector('video');
-+    return !!(player && video && !window.isPipPlaying && !video.paused && !video.ended &&
-+        player.classList.contains('ytLrPlayerEnabled'));
++    return !!(video && !window.isPipPlaying && !video.paused && !video.ended && video.currentTime > 0);
 +}
 +
 +function readTitle() {
@@ -143,8 +145,19 @@ index 0000000..67d585e
 +    evt.stopImmediatePropagation();
 +}
 +
++// TEMPORARY diagnostics: show which key arrives (not for arrows/OK/media keys).
++const QUIET_KEYS = [37, 38, 39, 40, 13, 32, 179, 415, 19, 412, 417];
++let lastDiag = 0;
++function diag(evt) {
++    if (!configRead('enableBackgroundOnBack') || QUIET_KEYS.includes(evt.keyCode)) return;
++    if (Date.now() - lastDiag < 800) return;
++    lastDiag = Date.now();
++    showToast('Rixius · diagnóstico', `Tecla ${evt.keyCode} "${evt.key}" · video sonando: ${watching() ? 'sí' : 'no'} · atrás: ${isBack(evt) ? 'sí' : 'no'}`);
++}
++
 +function onBack(evt) {
-+    if (!BACK_KEYS.includes(evt.keyCode) || !configRead('enableBackgroundOnBack')) return;
++    if (evt.type === 'keydown') diag(evt);
++    if (!isBack(evt) || !configRead('enableBackgroundOnBack')) return;
 +    if (swallowKeyUp) return block(evt);       // auto-repeat while held
 +    if (!watching()) return;
 +    block(evt);
@@ -155,7 +168,7 @@ index 0000000..67d585e
 +}
 +
 +function onBackUp(evt) {
-+    if (!swallowKeyUp || !BACK_KEYS.includes(evt.keyCode)) return;
++    if (!swallowKeyUp || !isBack(evt)) return;
 +    swallowKeyUp = false;
 +    block(evt);
 +}
@@ -163,8 +176,6 @@ index 0000000..67d585e
 +// Register on window AND document, capture phase, as early as possible.
 +window.addEventListener('keydown', onBack, true);
 +window.addEventListener('keyup', onBackUp, true);
-+document.addEventListener('keydown', onBack, true);
-+document.addEventListener('keyup', onBackUp, true);
 +
 +function afterPip(tries = 0) {
 +    if (!window.isPipPlaying) {
