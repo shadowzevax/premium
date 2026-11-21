@@ -186,10 +186,10 @@ index 0000000..8f23443
 +});
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..40412ef
+index 0000000..ba72c34
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,74 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
@@ -208,7 +208,14 @@ index 0000000..40412ef
 +    });
 +}
 +
-+function applyUpdate() {
++const ATTEMPT_KEY = 'rixius.updateAttempt';
++
++function lastAttempt() {
++    try { return JSON.parse(localStorage[ATTEMPT_KEY] || 'null'); } catch (_) { return null; }
++}
++
++function applyUpdate(build) {
++    try { localStorage[ATTEMPT_KEY] = JSON.stringify({ build, at: Date.now() }); } catch (_) { }
 +    showToast('Rixius', 'Actualizando...');
 +    // The engine loads the script with its own URL (+ ?v=...), which the browser caches for days.
 +    // Re-download every URL it may use with cache:'reload' so the HTTP cache holds the new build,
@@ -226,6 +233,15 @@ index 0000000..40412ef
 +            if (manual) showToast('Rixius', 'Ya tienes la última versión');
 +            return;
 +        }
++        // Already tried this build recently but the CDN still served the old script:
++        // don't loop; it propagates on its own within minutes/hours.
++        const prev = lastAttempt();
++        if (prev && prev.build === latest.build && Date.now() - prev.at < 2 * 3600 * 1000) {
++            if (manual) showToast('Rixius', 'Actualización en camino. Vuelve a intentar en unos minutos.');
++            if (!manual) return;
++            if (Date.now() - prev.at < 10 * 60 * 1000) return;
++        }
++        window.__rixiusPendingBuild = latest.build;
 +        const date = latest.date ? new Date(latest.date).toLocaleString() : '';
 +        showModal(
 +            { title: 'Actualización disponible', subtitle: date ? 'Publicada: ' + date : '' },
@@ -244,7 +260,7 @@ index 0000000..40412ef
 +    });
 +}
 +
-+window.__rixiusApplyUpdate = applyUpdate;
++window.__rixiusApplyUpdate = () => applyUpdate(window.__rixiusPendingBuild);
 +
 +// Automatic check shortly after startup.
 +setTimeout(() => checkForUpdates(false), 4000);
