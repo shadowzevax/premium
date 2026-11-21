@@ -1,12 +1,14 @@
 diff --git a/mods/config.js b/mods/config.js
-index 07d9bdf..c6b3b44 100644
+index 07d9bdf..a5caa1b 100644
 --- a/mods/config.js
 +++ b/mods/config.js
-@@ -41,6 +41,9 @@ const defaultConfig = {
+@@ -41,6 +41,11 @@ const defaultConfig = {
    enablePatchingVideoPlayer: true,
    enableMPButton: true,
    enableSwapMPWithPIP: false,
 +  enableBackgroundOnBack: false,
++  rixiusFastMode: true,
++  rixiusPerfMigrated: false,
 +  backgroundShowPipWindow: true,
 +  backgroundShowToast: true,
    enablePreviews: true,
@@ -74,6 +76,51 @@ index 0000000..5ad4111
 +        }
 +    });
 +}, true);
+diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
+new file mode 100644
+index 0000000..7d77c1f
+--- /dev/null
++++ b/mods/features/fastMode.js
+@@ -0,0 +1,39 @@
++// Rixius fast mode: make remote navigation feel instant on low-end TV boxes.
++// - removes UI transitions (focus moves/scrolls jump instantly instead of animating)
++// - one-time defaults: no video previews on focused thumbnails, no thumbnail enlarge effect
++// Must be imported before features that read those settings at startup.
++
++import { configRead, configWrite, configChangeEmitter } from '../config.js';
++
++if (!configRead('rixiusPerfMigrated')) {
++    configWrite('enablePreviews', false);
++    configWrite('disableEnlargingThumbnails', true);
++    configWrite('rixiusPerfMigrated', true);
++}
++
++const STYLE_ID = 'rixius-fast-mode';
++const CSS = `
++*, *::before, *::after {
++  transition-duration: 0s !important;
++  transition-delay: 0s !important;
++  scroll-behavior: auto !important;
++}`;
++
++function apply() {
++    let el = document.getElementById(STYLE_ID);
++    if (configRead('rixiusFastMode')) {
++        if (!el) {
++            el = document.createElement('style');
++            el.id = STYLE_ID;
++            el.textContent = CSS;
++            (document.head || document.documentElement).appendChild(el);
++        }
++    } else if (el) {
++        el.remove();
++    }
++}
++
++apply();
++configChangeEmitter.addEventListener('configChange', (e) => {
++    if (e.detail.key === 'rixiusFastMode') apply();
++});
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
 index 0000000..4970065
@@ -287,10 +334,10 @@ index bf3d612..20939a9 100644
  
  function InitI18next(lng) {
 diff --git a/mods/ui/settings.js b/mods/ui/settings.js
-index 34c07a4..5ba4172 100644
+index 34c07a4..b5985f9 100644
 --- a/mods/ui/settings.js
 +++ b/mods/ui/settings.js
-@@ -3,89 +3,18 @@ import { showModal, buttonItem, overlayPanelItemListRenderer, scrollPaneRenderer
+@@ -3,89 +3,23 @@ import { showModal, buttonItem, overlayPanelItemListRenderer, scrollPaneRenderer
  import qrcode from 'qrcode-npm';
  import { t } from 'i18next';
  import resolveCommand from '../resolveCommand.js';
@@ -319,8 +366,9 @@ index 34c07a4..5ba4172 100644
 -                    overlayMessageRenderer(t('settings.supportTT.content.6'))
 -                ])
 -            }
--        },
--        {
++            directAction: 'CHECK_FOR_UPDATES'
+         },
+         {
 -            name: t('settings.options.socialMedia.title'),
 -            icon: 'PRIVACY_UNLISTED',
 -            value: null,
@@ -381,11 +429,13 @@ index 34c07a4..5ba4172 100644
 -                    }
 -                }
 -            })
-+            directAction: 'CHECK_FOR_UPDATES'
++            name: 'Modo rápido (sin animaciones)',
++            icon: 'SETTINGS',
++            value: 'rixiusFastMode'
          },
          {
              name: t('settings.options.adBlock'),
-@@ -376,6 +305,21 @@ export default function modernUI(update, parameters) {
+@@ -376,6 +310,21 @@ export default function modernUI(update, parameters) {
                              name: t('settings.options.videoPlayer.options.patching.options.swapMPWithPIP'),
                              icon: 'CLEAR_COOKIES',
                              value: 'enableSwapMPWithPIP'
@@ -407,7 +457,7 @@ index 34c07a4..5ba4172 100644
                          }
                      ]
                  },
-@@ -766,35 +710,6 @@ export default function modernUI(update, parameters) {
+@@ -766,35 +715,6 @@ export default function modernUI(update, parameters) {
                  }
              ]
          },
@@ -443,7 +493,7 @@ index 34c07a4..5ba4172 100644
      ];
  
      const buttons = [];
-@@ -811,7 +726,9 @@ export default function modernUI(update, parameters) {
+@@ -811,7 +731,9 @@ export default function modernUI(update, parameters) {
                      secondaryIcon:
                          currentVal === null ? 'CHEVRON_RIGHT' : currentVal ? 'CHECK_BOX' : 'CHECK_BOX_OUTLINE_BLANK'
                  },
@@ -468,10 +518,18 @@ index 52f7547..e20f84a 100644
  <label for="__routeColor">Main Content Color: <input type="text" id="__routeColor"/></label>
  <div><small>Sponsor segments skipping - https://sponsor.ajay.app</small></div>
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..ddb10a4 100644
+index f8a9c6e..b41656b 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
-@@ -19,6 +19,8 @@ import "./features/moreSubtitles.js";
+@@ -2,6 +2,7 @@ import initPatches from "./features/standaloneUserscript.js";
+ if (window.location.hostname === 'localhost') {
+     initPatches();
+ }
++import "./features/fastMode.js";
+ import "./features/userAgentSpoofing.js";
+ import "whatwg-fetch";
+ import "core-js/proposals/object-getownpropertydescriptors";
+@@ -19,6 +20,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
