@@ -39,6 +39,8 @@ jobs:
         run: |
           export RIXIUS_BUILD="$(git rev-parse --short=7 HEAD)-$(sha256sum ../../premium.patch | cut -c1-7)"
           echo "RIXIUS_BUILD=$RIXIUS_BUILD" >> "$GITHUB_ENV"
+          export RIXIUS_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "RIXIUS_BUILD_DATE=$RIXIUS_BUILD_DATE" >> "$GITHUB_ENV"
           npm ci --no-audit --no-fund
           npm run build
           node --check ../dist/userScript.js
@@ -46,20 +48,22 @@ jobs:
       - name: Publish if changed
         run: |
           mkdir -p rixius/dist/v1
-          cp upstream/dist/userScript.js userScript.js
-          cp upstream/dist/userScript.js rixius/dist/v1/userScript.js
-          if ! grep -q "\"$RIXIUS_BUILD\"" rixius/dist/v1/version.json 2>/dev/null; then
-            echo "{\"build\":\"$RIXIUS_BUILD\",\"date\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > rixius/dist/v1/version.json
-          fi
-          (cd upstream && git rev-parse HEAD) > upstream-commit.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add userScript.js upstream-commit.txt rixius
-          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
-          git commit -m "Update userscript (upstream $(cat upstream-commit.txt | cut -c1-7))"
+          if grep -q "\"$RIXIUS_BUILD\"" rixius/dist/v1/version.json 2>/dev/null; then echo "Build already published"; exit 0; fi
+          cp upstream/dist/userScript.js userScript.js
+          cp upstream/dist/userScript.js rixius/dist/v1/userScript.js
+          (cd upstream && git rev-parse HEAD) > upstream-commit.txt
+          git add userScript.js upstream-commit.txt rixius/dist/v1/userScript.js
+          git commit -m "Update userscript $RIXIUS_BUILD"
           git push
-          # One purge per file (repeated purges get throttled by jsDelivr for hours).
-          # If a purge is throttled, the CDN still refreshes @main on its own within 12h.
+          SHA=$(git rev-parse HEAD)
+          # version.json points at the immutable commit-pinned copy (never stale on jsDelivr).
+          echo "{\"build\":\"$RIXIUS_BUILD\",\"date\":\"$RIXIUS_BUILD_DATE\",\"url\":\"https://cdn.jsdelivr.net/gh/${{ github.repository }}@$SHA/rixius/dist/v1/userScript.js\"}" > rixius/dist/v1/version.json
+          git add rixius/dist/v1/version.json
+          git commit -m "Announce $RIXIUS_BUILD"
+          git push
+          # One purge per file (repeated purges get jsDelivr purge throttled for hours).
           curl -s https://purge.jsdelivr.net/gh/${{ github.repository }}@main/userScript.js
           sleep 30
           curl -s https://purge.jsdelivr.net/gh/${{ github.repository }}@main/rixius/dist/v1/version.json

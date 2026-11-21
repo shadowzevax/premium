@@ -287,14 +287,15 @@ index 0000000..8f23443
 +});
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..ba72c34
+index 0000000..15d9d69
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,74 @@
+@@ -0,0 +1,89 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
 +import { buttonItem, showModal, showToast, overlayPanelItemListRenderer, overlayMessageRenderer } from '../ui/ytUI.js';
++import { storeBundle } from './selfUpdate.js';
 +
 +const SCRIPT_URL = 'https://cdn.jsdelivr.net/gh/shadowzevax/premium@main/userScript.js';
 +// The engine only allows cdn.jsdelivr.net (raw.githubusercontent / GitHub Pages are blocked).
@@ -315,9 +316,23 @@ index 0000000..ba72c34
 +    try { return JSON.parse(localStorage[ATTEMPT_KEY] || 'null'); } catch (_) { return null; }
 +}
 +
-+function applyUpdate(build) {
-+    try { localStorage[ATTEMPT_KEY] = JSON.stringify({ build, at: Date.now() }); } catch (_) { }
++function applyUpdate(latest) {
 +    showToast('Rixius', 'Actualizando...');
++    // Preferred: download the exact build from its immutable commit-pinned URL (never stale)
++    // and keep it locally; selfUpdate.js runs it on the next start.
++    if (latest && latest.url) {
++        fetch(latest.url, { cache: 'no-store' })
++            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
++            .then(code => {
++                if (code.indexOf(latest.build) === -1) throw new Error('build mismatch');
++                if (!storeBundle(latest.build, latest.date, code)) throw new Error('storage');
++                location.reload();
++            })
++            .catch(() => showToast('Rixius', 'No se pudo descargar la actualización. Intenta de nuevo.'));
++        return;
++    }
++    const build = latest && latest.build;
++    try { localStorage[ATTEMPT_KEY] = JSON.stringify({ build, at: Date.now() }); } catch (_) { }
 +    // The engine loads the script with its own URL (+ ?v=...), which the browser caches for days.
 +    // Re-download every URL it may use with cache:'reload' so the HTTP cache holds the new build,
 +    // then restart the web app.
@@ -336,13 +351,13 @@ index 0000000..ba72c34
 +        }
 +        // Already tried this build recently but the CDN still served the old script:
 +        // don't loop; it propagates on its own within minutes/hours.
-+        const prev = lastAttempt();
++        const prev = latest.url ? null : lastAttempt();
 +        if (prev && prev.build === latest.build && Date.now() - prev.at < 2 * 3600 * 1000) {
 +            if (manual) showToast('Rixius', 'Actualización en camino. Vuelve a intentar en unos minutos.');
 +            if (!manual) return;
 +            if (Date.now() - prev.at < 10 * 60 * 1000) return;
 +        }
-+        window.__rixiusPendingBuild = latest.build;
++        window.__rixiusPendingBuild = latest;
 +        const date = latest.date ? new Date(latest.date).toLocaleString() : '';
 +        showModal(
 +            { title: 'Actualización disponible', subtitle: date ? 'Publicada: ' + date : '' },
@@ -365,6 +380,50 @@ index 0000000..ba72c34
 +
 +// Automatic check shortly after startup.
 +setTimeout(() => checkForUpdates(false), 4000);
+diff --git a/mods/features/selfUpdate.js b/mods/features/selfUpdate.js
+new file mode 100644
+index 0000000..e37f53e
+--- /dev/null
++++ b/mods/features/selfUpdate.js
+@@ -0,0 +1,38 @@
++// Rixius self-update bootstrap. MUST be the first import of userScript.js.
++// The APK always loads ".../premium@main/userScript.js", which jsDelivr may keep stale for hours.
++// The in-app updater downloads newer builds from immutable commit-pinned URLs and stores them
++// here; on startup, if the stored build is newer than this one, run it instead and stop this one.
++
++const STORE_KEY = 'rixius.bundle';
++const OWN_DATE = '__RIXIUS_BUILD_DATE__';
++
++let stored = null;
++try { stored = JSON.parse(localStorage[STORE_KEY] || 'null'); } catch (_) { stored = null; }
++
++if (stored && stored.code && stored.date && OWN_DATE !== 'dev' && stored.date > OWN_DATE && !window.__rixiusBooted) {
++    window.__rixiusBooted = true;
++    let ok = false;
++    try {
++        (0, eval)(stored.code);
++        ok = true;
++    } catch (e) {
++        try { delete localStorage[STORE_KEY]; } catch (_) { }
++    }
++    if (ok) {
++        // Abort the rest of this (older) bundle.
++        throw new Error('Rixius: running stored build ' + stored.build);
++    }
++} else if (stored && stored.date && OWN_DATE !== 'dev' && stored.date < OWN_DATE) {
++    // The CDN caught up: the stored copy is no longer needed.
++    try { delete localStorage[STORE_KEY]; } catch (_) { }
++}
++window.__rixiusBooted = true;
++
++export function storeBundle(build, date, code) {
++    try {
++        localStorage[STORE_KEY] = JSON.stringify({ build, date, code });
++        return true;
++    } catch (_) {
++        return false;
++    }
++}
 diff --git a/mods/features/settingsApplyFix.js b/mods/features/settingsApplyFix.js
 new file mode 100644
 index 0000000..3661b03
@@ -545,10 +604,10 @@ index 3d2d10d..6f2a8bb 100644
                  .catch(err => console.error('TizenTube: failed to send feedback:', err));
              break;
 diff --git a/mods/rollup.config.js b/mods/rollup.config.js
-index 99ee7b2..e161940 100644
+index 99ee7b2..13fc8ae 100644
 --- a/mods/rollup.config.js
 +++ b/mods/rollup.config.js
-@@ -26,15 +26,19 @@ export default {
+@@ -26,15 +26,20 @@ export default {
              babelHelpers: 'bundled',
              presets: [
                  ['@babel/preset-env', {
@@ -567,6 +626,7 @@ index 99ee7b2..e161940 100644
          replace({
 +            preventAssignment: true,
 +            '__RIXIUS_BUILD__': process.env.RIXIUS_BUILD || 'dev',
++            '__RIXIUS_BUILD_DATE__': process.env.RIXIUS_BUILD_DATE || 'dev',
              '\uFFFF': '\u0000',
          })
      ]
@@ -591,6 +651,41 @@ index bf3d612..20939a9 100644
  InitI18next(window?.yt?.config_?.HL || navigator.language.replace(/(\-.*)/g, ''));
  
  function InitI18next(lng) {
+diff --git a/mods/ui/customUI.js b/mods/ui/customUI.js
+index baddfc9..7709f84 100644
+--- a/mods/ui/customUI.js
++++ b/mods/ui/customUI.js
+@@ -18,6 +18,7 @@ function applyPatches() {
+     }
+ 
+     const origMethod = window._yttv[methods[0]];
++    let cachedFunctions = null;
+ 
+     function YtlrPlayerActionsContainer() {
+         const args = Array.prototype.slice.call(arguments);
+@@ -43,7 +44,11 @@ function applyPatches() {
+             inst = this;
+         }
+ 
+-        const functions = extractAssignedFunctions(origMethod.toString());
++        // Rixius: parse the component source ONCE (it was re-parsed with esprima on every
++        // render of the player controls: slow on TV boxes) and never let a patch error break
++        // the controls (an exception here left empty placeholder buttons).
++        try {
++        const functions = cachedFunctions || (cachedFunctions = extractAssignedFunctions(origMethod.toString()));
+ 
+         const pipCommand = {
+             "type": "TRANSPORT_CONTROLS_BUTTON_TYPE_PIP",
+@@ -174,6 +179,9 @@ function applyPatches() {
+         }
+ 
+         return inst;
++        } catch (_) {
++            return inst;
++        }
+     }
+ 
+     if (configRead('enablePatchingVideoPlayer')) {
 diff --git a/mods/ui/settings.js b/mods/ui/settings.js
 index 34c07a4..6bb5a67 100644
 --- a/mods/ui/settings.js
@@ -782,10 +877,12 @@ index 52f7547..e20f84a 100644
  <label for="__routeColor">Main Content Color: <input type="text" id="__routeColor"/></label>
  <div><small>Sponsor segments skipping - https://sponsor.ajay.app</small></div>
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..b41656b 100644
+index f8a9c6e..e37c676 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
-@@ -2,6 +2,7 @@ import initPatches from "./features/standaloneUserscript.js";
+@@ -1,7 +1,9 @@
++import "./features/selfUpdate.js";
+ import initPatches from "./features/standaloneUserscript.js";
  if (window.location.hostname === 'localhost') {
      initPatches();
  }
@@ -793,7 +890,7 @@ index f8a9c6e..b41656b 100644
  import "./features/userAgentSpoofing.js";
  import "whatwg-fetch";
  import "core-js/proposals/object-getownpropertydescriptors";
-@@ -19,6 +20,8 @@ import "./features/moreSubtitles.js";
+@@ -19,6 +21,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
