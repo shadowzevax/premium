@@ -17,10 +17,10 @@ index 07d9bdf..af57b22 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..c1a11ee
+index 0000000..671e051
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,114 @@
 +// Back button -> keep playing in background (corner window or hidden).
 +// YouTube handles Back before any userscript listener, so we don't fight it: we let YouTube
 +// close the player normally, and as soon as it does we reload the same video at the same
@@ -88,11 +88,10 @@ index 0000000..c1a11ee
 +    };
 +    video.addEventListener('play', onPlay);
 +
-+    setTimeout(() => {
-+        const cfg = snapshot.config;
-+        cfg.watchEndpoint.startTimeSeconds = snapshot.time;
-+        ps.loadVideo(cfg);
-+    }, 300);
++    // Reload immediately (no extra wait) so the audio gap is as short as possible.
++    const cfg = snapshot.config;
++    cfg.watchEndpoint.startTimeSeconds = snapshot.time;
++    ps.loadVideo(cfg);
 +}
 +
 +// Note what is playing when Back is pressed (we never block the key).
@@ -106,7 +105,7 @@ index 0000000..c1a11ee
 +        showToast('Rixius', 'Segundo plano: no se encontró el servicio del reproductor');
 +        return;
 +    }
-+    pending = { config: ps.loadedPlaybackConfig, time: Math.floor(video.currentTime), at: Date.now() };
++    pending = { config: ps.loadedPlaybackConfig, time: video.currentTime, at: Date.now() };
 +}, true);
 +
 +// When YouTube closes the player right after that Back press, bring the video back.
@@ -131,7 +130,7 @@ index 0000000..c1a11ee
 +    if (!configRead('enableBackgroundOnBack') || sawBackKey || !watching()) return;
 +    const ps = playerService();
 +    const video = document.querySelector('video');
-+    if (ps && ps.loadedPlaybackConfig) lastSnap = { config: ps.loadedPlaybackConfig, time: Math.floor(video.currentTime), at: Date.now() };
++    if (ps && ps.loadedPlaybackConfig) lastSnap = { config: ps.loadedPlaybackConfig, time: video.currentTime, at: Date.now() };
 +}, 500);
 +
 +if (document.readyState === 'complete') observePlayer();
