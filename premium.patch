@@ -78,12 +78,12 @@ index 0000000..5ad4111
 +}, true);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
-index 0000000..7d77c1f
+index 0000000..47bc80b
 --- /dev/null
 +++ b/mods/features/fastMode.js
 @@ -0,0 +1,39 @@
 +// Rixius fast mode: make remote navigation feel instant on low-end TV boxes.
-+// - removes UI transitions (focus moves/scrolls jump instantly instead of animating)
++// - shortens UI transitions to 80ms (animations stay visible but no longer delay the remote)
 +// - one-time defaults: no video previews on focused thumbnails, no thumbnail enlarge effect
 +// Must be imported before features that read those settings at startup.
 +
@@ -98,7 +98,7 @@ index 0000000..7d77c1f
 +const STYLE_ID = 'rixius-fast-mode';
 +const CSS = `
 +*, *::before, *::after {
-+  transition-duration: 0s !important;
++  transition-duration: 80ms !important; /* still visible, but never makes the remote wait */
 +  transition-delay: 0s !important;
 +  scroll-behavior: auto !important;
 +}`;
@@ -334,7 +334,7 @@ index bf3d612..20939a9 100644
  
  function InitI18next(lng) {
 diff --git a/mods/ui/settings.js b/mods/ui/settings.js
-index 34c07a4..b5985f9 100644
+index 34c07a4..780a20f 100644
 --- a/mods/ui/settings.js
 +++ b/mods/ui/settings.js
 @@ -3,89 +3,23 @@ import { showModal, buttonItem, overlayPanelItemListRenderer, scrollPaneRenderer
@@ -429,7 +429,7 @@ index 34c07a4..b5985f9 100644
 -                    }
 -                }
 -            })
-+            name: 'Modo rápido (sin animaciones)',
++            name: 'Modo rápido (animaciones cortas)',
 +            icon: 'SETTINGS',
 +            value: 'rixiusFastMode'
          },
