@@ -17,27 +17,23 @@ index 07d9bdf..af57b22 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..671e051
+index 0000000..266755f
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,114 @@
-+// Back button -> keep playing in background (corner window or hidden).
-+// YouTube handles Back before any userscript listener, so we don't fight it: we let YouTube
-+// close the player normally, and as soon as it does we reload the same video at the same
-+// second into the corner window (same technique as the official enablePip()).
+@@ -0,0 +1,121 @@
++// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
++// video keeps playing and a "return to video" button appears next to Search.
++// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
 +
 +import { configRead } from '../config.js';
++import { enablePip } from './pictureInPicture.js';
 +import { showToast } from '../ui/ytUI.js';
 +
-+const BACK_KEYS = [27, 8, 461, 10009];
-+let pending = null;   // { config, time } captured when Back was pressed during playback
-+let sawBackKey = false; // if the engine never delivers Back to the page, use lastSnap instead
-+let lastSnap = null;
-+
-+function playerService() {
-+    const mappings = Object.values(window._yttv || {}).find(a => a && a.mappings);
-+    return mappings ? mappings.get('PlayerService') : null;
-+}
++// 166 = BrowserBack (Android remote Back in Chromium/Cobalt), 27 = Escape, 8 = Backspace,
++// 461 / 10009 = Back on LG / Tizen remotes.
++const BACK_KEYS = [166, 27, 8, 461, 10009];
++let swallowKeyUp = false;
++let nowPlayingTitle = '';
 +
 +function watching() {
 +    const player = document.querySelector('ytlr-player');
@@ -46,95 +42,106 @@ index 0000000..671e051
 +        player.classList.contains('ytLrPlayerEnabled'));
 +}
 +
-+function enterBackground(snapshot) {
-+    const video = document.querySelector('video');
-+    const ytlrPlayer = document.querySelector('ytlr-player');
-+    const container = document.querySelector('ytlr-player-container');
-+    const ps = playerService();
-+    if (!video || !ytlrPlayer || !ps) {
-+        showToast('Rixius', 'No se pudo pasar a segundo plano (reproductor no encontrado)');
-+        return;
-+    }
-+    const show = configRead('backgroundShowPipWindow');
-+
-+    const setStyles = () => {
-+        if (container) container.style.zIndex = '10';
-+        ytlrPlayer.style.display = 'block';
-+        ytlrPlayer.style.backgroundColor = 'rgba(0,0,0,0)';
-+    };
-+    setStyles();
-+    setTimeout(setStyles, 500);
-+
-+    const onPlay = () => {
-+        video.removeEventListener('play', onPlay);
-+        video.style.removeProperty('inset');
-+        if (show) {
-+            video.style.width = `${window.innerWidth / 3.5}px`;
-+            video.style.height = `${window.innerHeight / 3.5}px`;
-+            video.style.top = '68vh';
-+            video.style.left = '68vw';
-+            video.style.opacity = '1';
-+        } else {
-+            video.style.width = '1px';
-+            video.style.height = '1px';
-+            video.style.opacity = '0';
-+        }
-+        window.isPipPlaying = true;
-+        if (configRead('backgroundShowToast')) {
-+            showToast('Rixius', show
-+                ? 'Video en ventana pequeña. Usa el botón junto a la búsqueda para volver.'
-+                : 'Video en segundo plano. Usa el botón junto a la búsqueda para volver.');
-+        }
-+    };
-+    video.addEventListener('play', onPlay);
-+
-+    // Reload immediately (no extra wait) so the audio gap is as short as possible.
-+    const cfg = snapshot.config;
-+    cfg.watchEndpoint.startTimeSeconds = snapshot.time;
-+    ps.loadVideo(cfg);
-+}
-+
-+// Note what is playing when Back is pressed (we never block the key).
-+window.addEventListener('keydown', (evt) => {
-+    if (!BACK_KEYS.includes(evt.keyCode) || !configRead('enableBackgroundOnBack')) return;
-+    sawBackKey = true;
-+    if (!watching()) return;
-+    const ps = playerService();
-+    const video = document.querySelector('video');
-+    if (!ps || !ps.loadedPlaybackConfig) {
-+        showToast('Rixius', 'Segundo plano: no se encontró el servicio del reproductor');
-+        return;
-+    }
-+    pending = { config: ps.loadedPlaybackConfig, time: video.currentTime, at: Date.now() };
-+}, true);
-+
-+// When YouTube closes the player right after that Back press, bring the video back.
-+function observePlayer() {
++function readTitle() {
 +    const player = document.querySelector('ytlr-player');
-+    if (!player) return setTimeout(observePlayer, 1000);
-+    new MutationObserver(() => {
-+        if (player.classList.contains('ytLrPlayerEnabled')) return;
-+        let snapshot = pending;
-+        pending = null;
-+        if (!snapshot && !sawBackKey && configRead('enableBackgroundOnBack') && lastSnap &&
-+            Date.now() - lastSnap.at < 1500) snapshot = lastSnap;
-+        lastSnap = null;
-+        if (!snapshot) return;
-+        if (Date.now() - snapshot.at > 3000) return;   // closed for another reason
-+        enterBackground(snapshot);
-+    }).observe(player, { attributes: true, attributeFilter: ['class'] });
++    if (!player) return '';
++    const candidates = player.querySelectorAll('[class*="itle"], [class*="Title"]');
++    for (const el of candidates) {
++        const text = (el.textContent || '').trim();
++        if (text.length > 3 && text.length < 200) return text;
++    }
++    return '';
 +}
 +
-+// Fallback snapshot (only used when Back never reaches the page as a key event).
-+setInterval(() => {
-+    if (!configRead('enableBackgroundOnBack') || sawBackKey || !watching()) return;
-+    const ps = playerService();
-+    const video = document.querySelector('video');
-+    if (ps && ps.loadedPlaybackConfig) lastSnap = { config: ps.loadedPlaybackConfig, time: video.currentTime, at: Date.now() };
-+}, 500);
++function block(evt) {
++    evt.preventDefault();
++    evt.stopPropagation();
++    evt.stopImmediatePropagation();
++}
 +
-+if (document.readyState === 'complete') observePlayer();
-+else window.addEventListener('load', observePlayer);
++function onBack(evt) {
++    if (!BACK_KEYS.includes(evt.keyCode) || !configRead('enableBackgroundOnBack')) return;
++    if (swallowKeyUp) return block(evt);       // auto-repeat while held
++    if (!watching()) return;
++    block(evt);
++    swallowKeyUp = true;
++    nowPlayingTitle = readTitle();
++    enablePip();                               // exactly what the Mini Player button does
++    afterPip();
++}
++
++function onBackUp(evt) {
++    if (!swallowKeyUp || !BACK_KEYS.includes(evt.keyCode)) return;
++    swallowKeyUp = false;
++    block(evt);
++}
++
++// Register on window AND document, capture phase, as early as possible.
++window.addEventListener('keydown', onBack, true);
++window.addEventListener('keyup', onBackUp, true);
++document.addEventListener('keydown', onBack, true);
++document.addEventListener('keyup', onBackUp, true);
++
++function afterPip(tries = 0) {
++    if (!window.isPipPlaying) {
++        if (tries < 60) setTimeout(() => afterPip(tries + 1), 100);
++        return;
++    }
++    const video = document.querySelector('video');
++    if (video && !configRead('backgroundShowPipWindow')) {
++        video.style.opacity = '0';
++        video.style.width = '1px';
++        video.style.height = '1px';
++    }
++    if (configRead('backgroundShowToast')) {
++        showToast('Rixius', configRead('backgroundShowPipWindow')
++            ? 'Video en ventana pequeña. Usa el botón junto a Buscar para volver.'
++            : 'Reproduciendo en segundo plano. Usa el botón junto a Buscar para volver.');
++    }
++}
++
++// Marquee with the playing title next to the "return to video" button.
++const MARQUEE_ID = 'rixius-now-playing';
++const style = document.createElement('style');
++style.textContent = `
++#${MARQUEE_ID}{position:absolute;top:50%;transform:translateY(-50%);left:13.5em;width:16em;
++  overflow:hidden;white-space:nowrap;color:#fff;font-size:1.1em;opacity:.9;pointer-events:none;
++  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 6%,#000 94%,transparent 100%);}
++#${MARQUEE_ID} span{display:inline-block;padding-left:100%;animation:rixius-marquee 14s linear infinite;}
++@keyframes rixius-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}`;
++(document.head || document.documentElement).appendChild(style);
++
++setInterval(() => {
++    const existing = document.getElementById(MARQUEE_ID);
++    const pipButton = document.getElementById('tt-pip-button');
++    if (!window.isPipPlaying || !pipButton) {
++        if (existing) existing.remove();
++        // Returning to fullscreen: undo the hidden-mode styles.
++        const video = document.querySelector('video');
++        if (!window.isPipPlaying && video && video.style.opacity === '0') {
++            video.style.removeProperty('opacity');
++            video.style.removeProperty('width');
++            video.style.removeProperty('height');
++        }
++        return;
++    }
++    if (!nowPlayingTitle) nowPlayingTitle = readTitle() || 'Reproduciendo';
++    if (existing && existing.dataset.title === nowPlayingTitle) return;
++    if (existing) existing.remove();
++    const box = document.createElement('div');
++    box.id = MARQUEE_ID;
++    box.dataset.title = nowPlayingTitle;
++    const span = document.createElement('span');
++    span.textContent = '♪ ' + nowPlayingTitle;
++    box.appendChild(span);
++    pipButton.parentElement.appendChild(box);
++}, 1000);
++
++// Same marquee also when the official Mini Player button is used.
++// (only on OK/Enter, so normal navigation keys cost nothing)
++document.addEventListener('keydown', (evt) => {
++    if (evt.keyCode === 13 && watching()) nowPlayingTitle = readTitle();
++}, true);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
 index 0000000..8f23443
