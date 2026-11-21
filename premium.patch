@@ -1,8 +1,8 @@
 diff --git a/mods/config.js b/mods/config.js
-index 07d9bdf..af57b22 100644
+index 07d9bdf..267cfb5 100644
 --- a/mods/config.js
 +++ b/mods/config.js
-@@ -41,6 +41,12 @@ const defaultConfig = {
+@@ -41,6 +41,15 @@ const defaultConfig = {
    enablePatchingVideoPlayer: true,
    enableMPButton: true,
    enableSwapMPWithPIP: false,
@@ -10,6 +10,9 @@ index 07d9bdf..af57b22 100644
 +  rixiusFastMode: true,
 +  rixiusPerfMigrated: false,
 +  rixiusCodecMigrated: false,
++  rixiusLookMigrated: false,
++  rixiusAmoled: true,
++  rixiusFastHold: true,
 +  backgroundShowPipWindow: true,
 +  backgroundShowToast: true,
    enablePreviews: true,
@@ -17,10 +20,10 @@ index 07d9bdf..af57b22 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..a35357c
+index 0000000..ce95977
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,234 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -162,7 +165,7 @@ index 0000000..a35357c
 +    if (!watching()) return;
 +    block(evt);
 +    swallowKeyUp = true;
-+    nowPlayingTitle = readTitle();
++    nowPlayingTitle = '';
 +    enablePip();                               // exactly what the Mini Player button does
 +    afterPip();
 +}
@@ -193,22 +196,35 @@ index 0000000..a35357c
 +    }
 +}
 +
-+// Marquee with the playing title next to the "return to video" button.
++// Marquee with the playing title, on the same row as the "return to video" button,
++// between that button and the YouTube logo (fixed positioning from the button's rect).
 +const MARQUEE_ID = 'rixius-now-playing';
 +const style = document.createElement('style');
 +style.textContent = `
-+#${MARQUEE_ID}{position:absolute;top:50%;transform:translateY(-50%);left:13.5em;width:16em;
-+  overflow:hidden;white-space:nowrap;color:#fff;font-size:1.1em;opacity:.9;pointer-events:none;
-+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 6%,#000 94%,transparent 100%);}
-+#${MARQUEE_ID} span{display:inline-block;padding-left:100%;animation:rixius-marquee 14s linear infinite;}
++#${MARQUEE_ID}{position:fixed;z-index:1000;overflow:hidden;white-space:nowrap;color:#fff;
++  font-size:2.2vh;font-weight:500;opacity:.95;pointer-events:none;transform:translateY(-50%);
++  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 5%,#000 95%,transparent 100%);}
++#${MARQUEE_ID} span{display:inline-block;padding-left:100%;animation:rixius-marquee 16s linear infinite;}
 +@keyframes rixius-marquee{from{transform:translateX(0)}to{transform:translateX(-100%)}}`;
 +(document.head || document.documentElement).appendChild(style);
 +
++function placeMarquee(box, pipButton) {
++    const r = pipButton.getBoundingClientRect();
++    if (!r.width) { box.style.display = 'none'; return; }
++    const left = r.right + window.innerWidth * 0.015;
++    // Stop before the top-right logo area (~22% of the width).
++    const right = window.innerWidth * 0.78;
++    box.style.display = 'block';
++    box.style.left = left + 'px';
++    box.style.top = (r.top + r.height / 2) + 'px';
++    box.style.width = Math.max(120, right - left) + 'px';
++}
++
 +setInterval(() => {
-+    const existing = document.getElementById(MARQUEE_ID);
++    let box = document.getElementById(MARQUEE_ID);
 +    const pipButton = document.getElementById('tt-pip-button');
 +    if (!window.isPipPlaying || !pipButton) {
-+        if (existing) existing.remove();
++        if (box) box.remove();
 +        // Returning to fullscreen: undo the hidden-mode styles.
 +        const video = document.querySelector('video');
 +        if (!window.isPipPlaying && video && video.style.opacity === '0') {
@@ -218,24 +234,29 @@ index 0000000..a35357c
 +        }
 +        return;
 +    }
++    // Also applies when the official Mini Player button was used.
++    hideIfNeeded();
 +    attachEndedHandler();
 +    prepareUpNext();
-+    if (!nowPlayingTitle) nowPlayingTitle = readTitle() || 'Reproduciendo';
-+    if (existing && existing.dataset.title === nowPlayingTitle) return;
-+    if (existing) existing.remove();
-+    const box = document.createElement('div');
-+    box.id = MARQUEE_ID;
-+    box.dataset.title = nowPlayingTitle;
-+    const span = document.createElement('span');
-+    span.textContent = '♪ ' + nowPlayingTitle;
-+    box.appendChild(span);
-+    pipButton.parentElement.appendChild(box);
++    const title = nowPlayingTitle;          // real title comes from /next (prepareUpNext)
++    if (!title) { if (box) box.remove(); return; }
++    if (!box || box.dataset.title !== title) {
++        if (box) box.remove();
++        box = document.createElement('div');
++        box.id = MARQUEE_ID;
++        box.dataset.title = title;
++        const span = document.createElement('span');
++        span.textContent = '♪ ' + title;
++        box.appendChild(span);
++        document.body.appendChild(box);
++    }
++    placeMarquee(box, pipButton);
 +}, 1000);
 +
 +// Same marquee also when the official Mini Player button is used.
 +// (only on OK/Enter, so normal navigation keys cost nothing)
 +document.addEventListener('keydown', (evt) => {
-+    if (evt.keyCode === 13 && watching()) nowPlayingTitle = readTitle();
++    if (evt.keyCode === 13 && watching()) { nowPlayingTitle = ''; upNextFor = null; }
 +}, true);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
@@ -285,6 +306,87 @@ index 0000000..8f23443
 +configChangeEmitter.addEventListener('configChange', (e) => {
 +    if (e.detail.key === 'rixiusFastMode') apply();
 +});
+diff --git a/mods/features/rixiusLook.js b/mods/features/rixiusLook.js
+new file mode 100644
+index 0000000..82182e8
+--- /dev/null
++++ b/mods/features/rixiusLook.js
+@@ -0,0 +1,75 @@
++// Rixius look & feel:
++// - AMOLED pure black backgrounds (toggle)
++// - hide subtitles while the video is in mini player / background
++// - fast scrolling when holding an arrow key (toggle): YouTube TV only moves one item per
++//   key-repeat at its own pace; we add one extra step per repeat so holding moves ~2x faster.
++
++import { configRead, configWrite, configChangeEmitter } from '../config.js';
++
++// ---- one-time defaults
++if (!configRead('rixiusLookMigrated')) {
++    configWrite('focusContainerColor', '#000000');
++    configWrite('routeColor', '#000000');
++    configWrite('showWelcomeToast', false);
++    // Re-loading Home on startup makes the app open slower (it loads Home twice).
++    if (!configRead('launchToOnStartup')) configWrite('reloadHomeOnStartup', false);
++    configWrite('rixiusLookMigrated', true);
++}
++
++// ---- styles
++const style = document.createElement('style');
++style.id = 'rixius-look';
++function css() {
++    let s = `
++body.rixius-pip [class*="aption-window"], body.rixius-pip [class*="aptionWindow"],
++body.rixius-pip [class*="aptions-text"], body.rixius-pip [class*="aptionsText"],
++body.rixius-pip ytlr-captions-renderer, body.rixius-pip .ytp-caption-window-container {
++  display: none !important;
++}`;
++    if (configRead('rixiusAmoled')) {
++        s += `
++html, body, ytlr-app, #container, ytlr-guide-response yt-focus-container,
++ytlr-surface-page, ytlr-browse, ytlr-search-container, ytlr-overlay-panel {
++  background-color: #000 !important;
++}`;
++    }
++    return s;
++}
++function applyStyle() {
++    style.textContent = css();
++    if (!style.parentNode) (document.head || document.documentElement).appendChild(style);
++}
++applyStyle();
++configChangeEmitter.addEventListener('configChange', (e) => {
++    if (e.detail.key === 'rixiusAmoled') {
++        configWrite('focusContainerColor', e.detail.value ? '#000000' : '#0f0f0f');
++        configWrite('routeColor', e.detail.value ? '#000000' : '#0f0f0f');
++        applyStyle();
++    }
++});
++
++// Mark the body while in mini player so the CSS above can hide subtitles.
++setInterval(() => {
++    document.body && document.body.classList.toggle('rixius-pip', !!window.isPipPlaying);
++}, 500);
++
++// ---- fast scrolling when holding arrows
++const ARROWS = [37, 38, 39, 40];
++let synth = false;
++window.addEventListener('keydown', (evt) => {
++    if (synth || !evt.repeat || !ARROWS.includes(evt.keyCode) || !configRead('rixiusFastHold')) return;
++    const target = document.activeElement || document.body;
++    synth = true;
++    try {
++        const extra = new KeyboardEvent('keydown', {
++            key: evt.key, code: evt.code, keyCode: evt.keyCode, which: evt.keyCode,
++            bubbles: true, cancelable: true, repeat: true
++        });
++        // Older engines ignore keyCode in the constructor.
++        try { Object.defineProperty(extra, 'keyCode', { get: () => evt.keyCode }); } catch (_) { }
++        try { Object.defineProperty(extra, 'which', { get: () => evt.keyCode }); } catch (_) { }
++        setTimeout(() => { synth = true; target.dispatchEvent(extra); synth = false; }, 40);
++    } finally {
++        synth = false;
++    }
++}, true);
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
 index 0000000..15d9d69
@@ -687,10 +789,10 @@ index baddfc9..7709f84 100644
  
      if (configRead('enablePatchingVideoPlayer')) {
 diff --git a/mods/ui/settings.js b/mods/ui/settings.js
-index 34c07a4..6bb5a67 100644
+index 34c07a4..d202c02 100644
 --- a/mods/ui/settings.js
 +++ b/mods/ui/settings.js
-@@ -3,89 +3,30 @@ import { showModal, buttonItem, overlayPanelItemListRenderer, scrollPaneRenderer
+@@ -3,89 +3,40 @@ import { showModal, buttonItem, overlayPanelItemListRenderer, scrollPaneRenderer
  import qrcode from 'qrcode-npm';
  import { t } from 'i18next';
  import resolveCommand from '../resolveCommand.js';
@@ -791,10 +893,20 @@ index 34c07a4..6bb5a67 100644
 +            name: 'Modo rápido (animaciones cortas)',
 +            icon: 'SETTINGS',
 +            value: 'rixiusFastMode'
++        },
++        {
++            name: 'Desplazamiento rápido al mantener la flecha',
++            icon: 'SETTINGS',
++            value: 'rixiusFastHold'
++        },
++        {
++            name: 'Fondo negro puro (AMOLED)',
++            icon: 'SETTINGS',
++            value: 'rixiusAmoled'
          },
          {
              name: t('settings.options.adBlock'),
-@@ -376,6 +317,21 @@ export default function modernUI(update, parameters) {
+@@ -376,6 +327,21 @@ export default function modernUI(update, parameters) {
                              name: t('settings.options.videoPlayer.options.patching.options.swapMPWithPIP'),
                              icon: 'CLEAR_COOKIES',
                              value: 'enableSwapMPWithPIP'
@@ -816,7 +928,7 @@ index 34c07a4..6bb5a67 100644
                          }
                      ]
                  },
-@@ -766,35 +722,6 @@ export default function modernUI(update, parameters) {
+@@ -766,35 +732,6 @@ export default function modernUI(update, parameters) {
                  }
              ]
          },
@@ -852,7 +964,7 @@ index 34c07a4..6bb5a67 100644
      ];
  
      const buttons = [];
-@@ -811,7 +738,9 @@ export default function modernUI(update, parameters) {
+@@ -811,7 +748,9 @@ export default function modernUI(update, parameters) {
                      secondaryIcon:
                          currentVal === null ? 'CHEVRON_RIGHT' : currentVal ? 'CHECK_BOX' : 'CHECK_BOX_OUTLINE_BLANK'
                  },
@@ -877,20 +989,21 @@ index 52f7547..e20f84a 100644
  <label for="__routeColor">Main Content Color: <input type="text" id="__routeColor"/></label>
  <div><small>Sponsor segments skipping - https://sponsor.ajay.app</small></div>
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..e37c676 100644
+index f8a9c6e..540d146 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
-@@ -1,7 +1,9 @@
+@@ -1,7 +1,10 @@
 +import "./features/selfUpdate.js";
  import initPatches from "./features/standaloneUserscript.js";
  if (window.location.hostname === 'localhost') {
      initPatches();
  }
 +import "./features/fastMode.js";
++import "./features/rixiusLook.js";
  import "./features/userAgentSpoofing.js";
  import "whatwg-fetch";
  import "core-js/proposals/object-getownpropertydescriptors";
-@@ -19,6 +21,8 @@ import "./features/moreSubtitles.js";
+@@ -19,6 +22,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
