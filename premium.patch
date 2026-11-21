@@ -17,10 +17,10 @@ index 07d9bdf..af57b22 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..266755f
+index 0000000..67d585e
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,205 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -51,6 +51,90 @@ index 0000000..266755f
 +        if (text.length > 3 && text.length < 200) return text;
 +    }
 +    return '';
++}
++
++// ---- Autoplay while in background: ask YouTube for "up next" and play it when the video ends.
++let upNext = null;          // { watchEndpoint, title }
++let upNextFor = null;       // videoId the upNext belongs to
++
++function services() {
++    const mappings = Object.values(window._yttv || {}).find(a => a && a.mappings);
++    return mappings ? {
++        ps: mappings.get('PlayerService'),
++        ids: mappings.get('CurrentIdentityService'),
++        client: mappings.get('KabukiInnerTubeClient')
++    } : {};
++}
++
++function textOf(t) {
++    if (!t) return '';
++    if (t.simpleText) return t.simpleText;
++    return (t.runs || []).map(r => r.text).join('');
++}
++
++function fetchNext(videoId, cb) {
++    const { ids, client } = services();
++    if (!ids || !client || !videoId) return;
++    ids.get().then(identity => {
++        client.fetch({
++            identity, isPrefetch: false, path: '/youtubei/v1/next',
++            payload: { videoId, racyCheckOk: true, contentCheckOk: true, autonavState: 'STATE_ON' },
++            clickTracking: { clickTrackingParams: null }
++        }).subscribe(response => {
++            const results = response?.contents?.singleColumnWatchNextResults;
++            const set = results?.autoplay?.autoplay?.sets?.[0];
++            const next = set?.autoplayVideo || set?.nextVideoRenderer?.maybeHistoryEndpointRenderer?.endpoint;
++            const section = results?.results?.results?.contents?.find(i => i.itemSectionRenderer);
++            const meta = section?.itemSectionRenderer?.contents?.find(i => i.videoMetadataRenderer)?.videoMetadataRenderer;
++            cb({ title: textOf(meta?.title), next: next?.watchEndpoint ? next : null });
++        });
++    }).catch(() => { });
++}
++
++function currentVideoId() {
++    const { ps } = services();
++    return ps?.loadedPlaybackConfig?.watchEndpoint?.videoId;
++}
++
++function prepareUpNext() {
++    const id = currentVideoId();
++    if (!id || upNextFor === id) return;
++    upNextFor = id;
++    upNext = null;
++    fetchNext(id, info => {
++        if (info.title) nowPlayingTitle = info.title;
++        upNext = info.next;
++    });
++}
++
++function hideIfNeeded() {
++    const video = document.querySelector('video');
++    if (video && !configRead('backgroundShowPipWindow')) {
++        video.style.opacity = '0';
++        video.style.width = '1px';
++        video.style.height = '1px';
++    }
++}
++
++function playUpNext() {
++    if (!window.isPipPlaying || !upNext) return;
++    if (window.queuedVideos && window.queuedVideos.videos && window.queuedVideos.videos.length) return; // user queue wins
++    const { ps } = services();
++    if (!ps || !ps.loadedPlaybackConfig) return;
++    const cfg = Object.assign({}, ps.loadedPlaybackConfig);
++    cfg.watchEndpoint = Object.assign({}, upNext.watchEndpoint, { startTimeSeconds: 0 });
++    if (upNext.clickTrackingParams) cfg.clickTrackingParams = upNext.clickTrackingParams;
++    upNext = null;
++    nowPlayingTitle = '';
++    ps.loadVideo(cfg);
++    setTimeout(() => { hideIfNeeded(); prepareUpNext(); }, 1500);
++}
++
++function attachEndedHandler() {
++    const video = document.querySelector('video');
++    if (!video || video.__rixiusEnded) return;
++    video.__rixiusEnded = true;
++    video.addEventListener('ended', playUpNext);
 +}
 +
 +function block(evt) {
@@ -88,11 +172,9 @@ index 0000000..266755f
 +        return;
 +    }
 +    const video = document.querySelector('video');
-+    if (video && !configRead('backgroundShowPipWindow')) {
-+        video.style.opacity = '0';
-+        video.style.width = '1px';
-+        video.style.height = '1px';
-+    }
++    hideIfNeeded();
++    attachEndedHandler();
++    prepareUpNext();
 +    if (configRead('backgroundShowToast')) {
 +        showToast('Rixius', configRead('backgroundShowPipWindow')
 +            ? 'Video en ventana pequeña. Usa el botón junto a Buscar para volver.'
@@ -125,6 +207,8 @@ index 0000000..266755f
 +        }
 +        return;
 +    }
++    attachEndedHandler();
++    prepareUpNext();
 +    if (!nowPlayingTitle) nowPlayingTitle = readTitle() || 'Reproduciendo';
 +    if (existing && existing.dataset.title === nowPlayingTitle) return;
 +    if (existing) existing.remove();
