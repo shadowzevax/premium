@@ -74,6 +74,62 @@ index 0000000..5ad4111
 +        }
 +    });
 +}, true);
+diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
+new file mode 100644
+index 0000000..4970065
+--- /dev/null
++++ b/mods/features/rixiusUpdater.js
+@@ -0,0 +1,50 @@
++// Rixius updater: checks the published build and applies it by restarting the app UI.
++// The engine (APK) rarely changes; the script (ad block, features) is what updates.
++
++import { buttonItem, showModal, showToast, overlayPanelItemListRenderer, overlayMessageRenderer } from '../ui/ytUI.js';
++
++const BASE = 'https://shadowzevax.github.io/premium/rixius/dist/v1/';
++export const RIXIUS_BUILD = '__RIXIUS_BUILD__';
++
++function fetchLatest() {
++    return fetch(BASE + 'version.json?t=' + Date.now(), { cache: 'no-store' }).then(r => {
++        if (!r.ok) throw new Error('HTTP ' + r.status);
++        return r.json();
++    });
++}
++
++function applyUpdate() {
++    showToast('Rixius', 'Actualizando...');
++    // Refresh the cached script, then restart the web app so the new version loads.
++    fetch(BASE + 'userScript.js', { cache: 'reload' }).catch(() => {}).then(() => location.reload());
++}
++
++export function checkForUpdates(manual) {
++    if (manual) showToast('Rixius', 'Buscando actualizaciones...');
++    fetchLatest().then(latest => {
++        if (!latest.build || latest.build === RIXIUS_BUILD) {
++            if (manual) showToast('Rixius', 'Ya tienes la última versión');
++            return;
++        }
++        const date = latest.date ? new Date(latest.date).toLocaleString() : '';
++        showModal(
++            { title: 'Actualización disponible', subtitle: date ? 'Publicada: ' + date : '' },
++            overlayPanelItemListRenderer([
++                buttonItem({ title: 'Actualizar ahora', subtitle: 'La app se reinicia en unos segundos' }, { icon: 'DOWN_ARROW' },
++                    [{ customAction: { action: 'RIXIUS_UPDATE_NOW' } }, { signalAction: { signal: 'POPUP_BACK' } }]),
++                buttonItem({ title: 'Más tarde' }, { icon: 'SEARCH_HISTORY' },
++                    [{ signalAction: { signal: 'POPUP_BACK' } }]),
++                overlayMessageRenderer(' ')
++            ]),
++            'rixius-update-modal',
++            false
++        );
++    }).catch(() => {
++        if (manual) showToast('Rixius', 'No se pudo comprobar. Revisa tu conexión.');
++    });
++}
++
++window.__rixiusApplyUpdate = applyUpdate;
++
++// Automatic check shortly after startup.
++setTimeout(() => checkForUpdates(false), 4000);
 diff --git a/mods/features/settingsApplyFix.js b/mods/features/settingsApplyFix.js
 new file mode 100644
 index 0000000..7328048
@@ -140,10 +196,19 @@ index 381fa71..02a1dfc 100644
          if (configRead('dontCheckUpdateUntil') > currentEpoch) {
              console.info('Skipping update check until', new Date(configRead('dontCheckUpdateUntil') * 1000).toLocaleString());
 diff --git a/mods/resolveCommand.js b/mods/resolveCommand.js
-index 3d2d10d..6cf597a 100644
+index 3d2d10d..9d57dbd 100644
 --- a/mods/resolveCommand.js
 +++ b/mods/resolveCommand.js
-@@ -236,15 +236,15 @@ function customAction(action, parameters) {
+@@ -3,7 +3,7 @@ import { enablePip } from './features/pictureInPicture.js';
+ import modernUI, { optionShow } from './ui/settings.js';
+ import { speedSettings } from './ui/speedUI.js';
+ import { showToast, buttonItem, showModal, QrCodeRenderer, overlayPanelItemListRenderer, overlayMessageRenderer } from './ui/ytUI.js';
+-import checkForUpdates from './features/updater.js';
++import { checkForUpdates } from './features/rixiusUpdater.js';
+ import { t } from 'i18next';
+ import { requestNextAndNavigateChannel, getFeedbackPanelTokens, sendFeedbackToken } from './utils/innerTubeCalls.js';
+ import qrcode from 'qrcode-npm';
+@@ -236,15 +236,18 @@ function customAction(action, parameters) {
              window.h5vcc.tizentube.EnterPIP();
              break;
          case 'SHOW_TOAST':
@@ -159,10 +224,13 @@ index 3d2d10d..6cf597a 100644
              window.queuedVideos.videos = [];
 -            showToast('TizenTube', t('toasts.videoQueueCleared'));
 +            showToast('Rixius', t('toasts.videoQueueCleared'));
++            break;
++        case 'RIXIUS_UPDATE_NOW':
++            window.__rixiusApplyUpdate();
              break;
          case 'CHECK_FOR_UPDATES':
              checkForUpdates(true);
-@@ -266,7 +266,7 @@ function customAction(action, parameters) {
+@@ -266,7 +269,7 @@ function customAction(action, parameters) {
                              signal: 'POPUP_BACK'
                          }
                      });
@@ -172,10 +240,10 @@ index 3d2d10d..6cf597a 100644
                  .catch(err => console.error('TizenTube: failed to send feedback:', err));
              break;
 diff --git a/mods/rollup.config.js b/mods/rollup.config.js
-index 99ee7b2..34ed090 100644
+index 99ee7b2..e161940 100644
 --- a/mods/rollup.config.js
 +++ b/mods/rollup.config.js
-@@ -26,13 +26,15 @@ export default {
+@@ -26,15 +26,19 @@ export default {
              babelHelpers: 'bundled',
              presets: [
                  ['@babel/preset-env', {
@@ -192,7 +260,11 @@ index 99ee7b2..34ed090 100644
 +            compress: { drop_console: true, passes: 2 },
          }),
          replace({
++            preventAssignment: true,
++            '__RIXIUS_BUILD__': process.env.RIXIUS_BUILD || 'dev',
              '\uFFFF': '\u0000',
+         })
+     ]
 diff --git a/mods/translations/index.js b/mods/translations/index.js
 index bf3d612..20939a9 100644
 --- a/mods/translations/index.js
@@ -215,17 +287,26 @@ index bf3d612..20939a9 100644
  
  function InitI18next(lng) {
 diff --git a/mods/ui/settings.js b/mods/ui/settings.js
-index 34c07a4..f0ffb7b 100644
+index 34c07a4..5ba4172 100644
 --- a/mods/ui/settings.js
 +++ b/mods/ui/settings.js
-@@ -8,85 +8,6 @@ const qrcodes = {};
+@@ -3,89 +3,18 @@ import { showModal, buttonItem, overlayPanelItemListRenderer, scrollPaneRenderer
+ import qrcode from 'qrcode-npm';
+ import { t } from 'i18next';
+ import resolveCommand from '../resolveCommand.js';
++import { RIXIUS_BUILD } from '../features/rixiusUpdater.js';
+ 
+ const qrcodes = {};
  
  export default function modernUI(update, parameters) {
      const settings = [
--        {
+         {
 -            name: t('settings.supportTT.title'),
 -            icon: 'MONEY_HEART',
--            value: null,
++            name: 'Buscar actualizaciones',
++            subtitle: 'Versión ' + RIXIUS_BUILD,
++            icon: 'SYSTEM_UPDATE',
+             value: null,
 -            options: {
 -                title: t('settings.supportTT.title'),
 -                subtitle: t('settings.supportTT.subtitle'),
@@ -300,11 +381,11 @@ index 34c07a4..f0ffb7b 100644
 -                    }
 -                }
 -            })
--        },
++            directAction: 'CHECK_FOR_UPDATES'
+         },
          {
              name: t('settings.options.adBlock'),
-             icon: 'DOLLAR_SIGN',
-@@ -376,6 +297,21 @@ export default function modernUI(update, parameters) {
+@@ -376,6 +305,21 @@ export default function modernUI(update, parameters) {
                              name: t('settings.options.videoPlayer.options.patching.options.swapMPWithPIP'),
                              icon: 'CLEAR_COOKIES',
                              value: 'enableSwapMPWithPIP'
@@ -326,6 +407,53 @@ index 34c07a4..f0ffb7b 100644
                          }
                      ]
                  },
+@@ -766,35 +710,6 @@ export default function modernUI(update, parameters) {
+                 }
+             ]
+         },
+-        window.h5vcc && window.h5vcc.tizentube ?
+-            {
+-                name: t('settings.options.updater.title'),
+-                icon: 'SYSTEM_UPDATE',
+-                value: null,
+-                menuHeader: {
+-                    title: t('settings.options.updater.title'),
+-                    subtitle: t('settings.options.updater.menuSubtitle')
+-                },
+-                subtitle:  t('settings.options.updater.versionSubtitle', { version: window.h5vcc.tizentube.GetVersion() }),
+-                options: [
+-                    buttonItem(
+-                        { title: t('settings.options.updater.options.checkForUpdates') },
+-                        { icon: 'SYSTEM_UPDATE' },
+-                        [
+-                            {
+-                                customAction: {
+-                                    action: 'CHECK_FOR_UPDATES',
+-                                }
+-                            }
+-                        ]
+-                    ),
+-                    {
+-                        name: t('settings.options.updater.options.checkForUpdatesOnStartup'),
+-                        icon: 'SYSTEM_UPDATE',
+-                        value: 'enableUpdater'
+-                    }
+-                ]
+-            } : null
+     ];
+ 
+     const buttons = [];
+@@ -811,7 +726,9 @@ export default function modernUI(update, parameters) {
+                     secondaryIcon:
+                         currentVal === null ? 'CHEVRON_RIGHT' : currentVal ? 'CHECK_BOX' : 'CHECK_BOX_OUTLINE_BLANK'
+                 },
+-                currentVal !== null
++                setting.directAction
++                    ? [{ customAction: { action: setting.directAction } }]
++                    : currentVal !== null
+                     ? [
+                         {
+                             setClientSettingEndpoint: {
 diff --git a/mods/ui/ui.js b/mods/ui/ui.js
 index 52f7547..e20f84a 100644
 --- a/mods/ui/ui.js

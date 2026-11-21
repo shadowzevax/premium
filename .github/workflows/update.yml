@@ -32,17 +32,24 @@ jobs:
       - name: Build
         working-directory: upstream/mods
         run: |
+          export RIXIUS_BUILD="$(git rev-parse --short=7 HEAD)-$(sha256sum ../../premium.patch | cut -c1-7)"
+          echo "RIXIUS_BUILD=$RIXIUS_BUILD" >> "$GITHUB_ENV"
           npm ci --no-audit --no-fund
           npm run build
           node --check ../dist/userScript.js
 
       - name: Publish if changed
         run: |
+          mkdir -p rixius/dist/v1
           cp upstream/dist/userScript.js userScript.js
+          cp upstream/dist/userScript.js rixius/dist/v1/userScript.js
+          if ! grep -q "\"$RIXIUS_BUILD\"" rixius/dist/v1/version.json 2>/dev/null; then
+            echo "{\"build\":\"$RIXIUS_BUILD\",\"date\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > rixius/dist/v1/version.json
+          fi
           (cd upstream && git rev-parse HEAD) > upstream-commit.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add userScript.js upstream-commit.txt
+          git add userScript.js upstream-commit.txt rixius
           if git diff --cached --quiet; then echo "No changes"; exit 0; fi
           git commit -m "Update userscript (upstream $(cat upstream-commit.txt | cut -c1-7))"
           git push
