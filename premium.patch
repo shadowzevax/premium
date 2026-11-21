@@ -1,0 +1,150 @@
+diff --git a/mods/config.js b/mods/config.js
+index 07d9bdf..c6b3b44 100644
+--- a/mods/config.js
++++ b/mods/config.js
+@@ -41,6 +41,9 @@ const defaultConfig = {
+   enablePatchingVideoPlayer: true,
+   enableMPButton: true,
+   enableSwapMPWithPIP: false,
++  enableBackgroundOnBack: false,
++  backgroundShowPipWindow: true,
++  backgroundShowToast: true,
+   enablePreviews: true,
+   enableHideWatchedVideos: false,
+   hideWatchedVideosThreshold: 80,
+diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
+new file mode 100644
+index 0000000..d663cbd
+--- /dev/null
++++ b/mods/features/backToPip.js
+@@ -0,0 +1,56 @@
++// Back button -> keep playing in background (Picture in Picture or hidden).
++// Reuses the official enablePip(), which already performs "HISTORY_BACK + keep video".
++
++import { configRead } from '../config.js';
++import { enablePip } from './pictureInPicture.js';
++import { showToast } from '../ui/ytUI.js';
++
++const BACK_KEYS = [27, 8, 461, 10009];
++
++function isWatchingFullscreen() {
++    const player = document.querySelector('ytlr-player');
++    const video = document.querySelector('video');
++    if (!player || !video || window.isPipPlaying) return false;
++    if (!player.classList.contains('ytLrPlayerEnabled')) return false;
++    if (video.paused || video.ended) return false;
++    // Leave menus/popups (quality, speed, TizenTube modals...) to the normal back behaviour.
++    if (document.querySelector('ytlr-overlay-panel, ytlr-popup-panel, .tt-modal, [id^="tt-"][id$="-modal"]')) return false;
++    return true;
++}
++
++function applyHiddenMode() {
++    const video = document.querySelector('video');
++    if (!video) return;
++    video.style.opacity = '0';
++    video.style.width = '1px';
++    video.style.height = '1px';
++}
++
++function waitForPipThen(cb, tries = 0) {
++    if (window.isPipPlaying) return cb();
++    if (tries > 40) return;
++    setTimeout(() => waitForPipThen(cb, tries + 1), 100);
++}
++
++document.addEventListener('keydown', (evt) => {
++    if (!BACK_KEYS.includes(evt.keyCode)) return;
++    if (!configRead('enableBackgroundOnBack')) return;
++    if (!isWatchingFullscreen()) return;
++
++    evt.preventDefault();
++    evt.stopImmediatePropagation();
++
++    enablePip();
++
++    waitForPipThen(() => {
++        if (!configRead('backgroundShowPipWindow')) applyHiddenMode();
++        if (configRead('backgroundShowToast')) {
++            showToast(
++                'TizenTube',
++                configRead('backgroundShowPipWindow')
++                    ? 'Video en ventana pequeña. Usa el botón junto a la búsqueda para volver.'
++                    : 'Video en segundo plano. Usa el botón junto a la búsqueda para volver.'
++            );
++        }
++    });
++}, true);
+diff --git a/mods/features/updater.js b/mods/features/updater.js
+index 381fa71..02a1dfc 100644
+--- a/mods/features/updater.js
++++ b/mods/features/updater.js
+@@ -7,7 +7,8 @@ import { t } from 'i18next';
+ // If TizenTube is not running on Cobalt, do nothing
+ // Add a timeout since reloading the home page while the updater pop up is shown causes the pop up to instantly disappear.
+ setTimeout(() => {
+-    if (window.h5vcc && window.h5vcc.tizentube && configRead('enableUpdater')) {
++    // Personal build: the official updater would install the upstream APK, so it is disabled.
++    if (false && window.h5vcc && window.h5vcc.tizentube && configRead('enableUpdater')) {
+         const currentEpoch = Math.floor(Date.now() / 1000);
+         if (configRead('dontCheckUpdateUntil') > currentEpoch) {
+             console.info('Skipping update check until', new Date(configRead('dontCheckUpdateUntil') * 1000).toLocaleString());
+diff --git a/mods/rollup.config.js b/mods/rollup.config.js
+index 99ee7b2..34ed090 100644
+--- a/mods/rollup.config.js
++++ b/mods/rollup.config.js
+@@ -26,13 +26,15 @@ export default {
+             babelHelpers: 'bundled',
+             presets: [
+                 ['@babel/preset-env', {
+-                    targets: 'Chrome 47',
++                    targets: 'Chrome 120'  // Cobalt 2.x = Chromium 138: keep native modern JS (faster, smaller),
+                 }],
+             ],
+         }),
+         terser({
+-            ecma: '5',
++            ecma: 2020,
+             mangle: true,
++            // Remove all console.* calls: some run on every remote key press / JSON response.
++            compress: { drop_console: true, passes: 2 },
+         }),
+         replace({
+             '\uFFFF': '\u0000',
+diff --git a/mods/ui/settings.js b/mods/ui/settings.js
+index 34c07a4..b93b533 100644
+--- a/mods/ui/settings.js
++++ b/mods/ui/settings.js
+@@ -376,6 +376,21 @@ export default function modernUI(update, parameters) {
+                             name: t('settings.options.videoPlayer.options.patching.options.swapMPWithPIP'),
+                             icon: 'CLEAR_COOKIES',
+                             value: 'enableSwapMPWithPIP'
++                        },
++                        {
++                            name: 'Seguir reproduciendo al pulsar atrás',
++                            icon: 'CLEAR_COOKIES',
++                            value: 'enableBackgroundOnBack'
++                        },
++                        {
++                            name: 'Mostrar ventanita en la esquina',
++                            icon: 'CLEAR_COOKIES',
++                            value: 'backgroundShowPipWindow'
++                        },
++                        {
++                            name: 'Mostrar aviso al pasar a segundo plano',
++                            icon: 'CLEAR_COOKIES',
++                            value: 'backgroundShowToast'
+                         }
+                     ]
+                 },
+diff --git a/mods/userScript.js b/mods/userScript.js
+index f8a9c6e..0b498e8 100644
+--- a/mods/userScript.js
++++ b/mods/userScript.js
+@@ -19,6 +19,7 @@ import "./features/moreSubtitles.js";
+ import "./features/captionStylePersistence.js";
+ import "./features/updater.js";
+ import "./features/pictureInPicture.js";
++import "./features/backToPip.js";
+ import "./features/preferredVideoQuality.js";
+ import "./features/videoQueuing.js";
+ import "./features/enableFeatures.js";
