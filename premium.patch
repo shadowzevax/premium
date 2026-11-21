@@ -680,7 +680,7 @@ index 52f7547..e20f84a 100644
  <label for="__routeColor">Main Content Color: <input type="text" id="__routeColor"/></label>
  <div><small>Sponsor segments skipping - https://sponsor.ajay.app</small></div>
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..53acba1 100644
+index f8a9c6e..b41656b 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
 @@ -2,6 +2,7 @@ import initPatches from "./features/standaloneUserscript.js";
@@ -691,13 +691,12 @@ index f8a9c6e..53acba1 100644
  import "./features/userAgentSpoofing.js";
  import "whatwg-fetch";
  import "core-js/proposals/object-getownpropertydescriptors";
-@@ -19,6 +20,9 @@ import "./features/moreSubtitles.js";
+@@ -19,6 +20,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
 +import "./features/backToPip.js";
 +import "./features/settingsApplyFix.js";
-+import "./features/videoWatchdog.js";
  import "./features/preferredVideoQuality.js";
  import "./features/videoQueuing.js";
  import "./features/enableFeatures.js";
