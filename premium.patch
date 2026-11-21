@@ -17,82 +17,125 @@ index 07d9bdf..af57b22 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..087fedb
+index 0000000..c1a11ee
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,72 @@
-+// Back button -> keep playing in background (Picture in Picture or hidden).
-+// Reuses the official enablePip(), which already performs "HISTORY_BACK + keep video".
+@@ -0,0 +1,115 @@
++// Back button -> keep playing in background (corner window or hidden).
++// YouTube handles Back before any userscript listener, so we don't fight it: we let YouTube
++// close the player normally, and as soon as it does we reload the same video at the same
++// second into the corner window (same technique as the official enablePip()).
 +
 +import { configRead } from '../config.js';
-+import { enablePip } from './pictureInPicture.js';
 +import { showToast } from '../ui/ytUI.js';
 +
 +const BACK_KEYS = [27, 8, 461, 10009];
-+let swallowKeyUp = false;
++let pending = null;   // { config, time } captured when Back was pressed during playback
++let sawBackKey = false; // if the engine never delivers Back to the page, use lastSnap instead
++let lastSnap = null;
 +
-+function isWatchingFullscreen() {
++function playerService() {
++    const mappings = Object.values(window._yttv || {}).find(a => a && a.mappings);
++    return mappings ? mappings.get('PlayerService') : null;
++}
++
++function watching() {
 +    const player = document.querySelector('ytlr-player');
 +    const video = document.querySelector('video');
-+    if (!player || !video || window.isPipPlaying) return false;
-+    if (!player.classList.contains('ytLrPlayerEnabled')) return false;
-+    if (video.paused || video.ended) return false;
-+    // Leave our own modals (settings, updater) to the normal back behaviour.
-+    if (document.querySelector('[id^="tt-"][id$="modal"], #tt-settings, #rixius-update-modal')) return false;
-+    return true;
++    return !!(player && video && !window.isPipPlaying && !video.paused && !video.ended &&
++        player.classList.contains('ytLrPlayerEnabled'));
 +}
 +
-+function applyHiddenMode() {
++function enterBackground(snapshot) {
 +    const video = document.querySelector('video');
-+    if (!video) return;
-+    video.style.opacity = '0';
-+    video.style.width = '1px';
-+    video.style.height = '1px';
-+}
++    const ytlrPlayer = document.querySelector('ytlr-player');
++    const container = document.querySelector('ytlr-player-container');
++    const ps = playerService();
++    if (!video || !ytlrPlayer || !ps) {
++        showToast('Rixius', 'No se pudo pasar a segundo plano (reproductor no encontrado)');
++        return;
++    }
++    const show = configRead('backgroundShowPipWindow');
 +
-+function waitForPipThen(cb, tries = 0) {
-+    if (window.isPipPlaying) return cb();
-+    if (tries > 40) return;
-+    setTimeout(() => waitForPipThen(cb, tries + 1), 100);
-+}
++    const setStyles = () => {
++        if (container) container.style.zIndex = '10';
++        ytlrPlayer.style.display = 'block';
++        ytlrPlayer.style.backgroundColor = 'rgba(0,0,0,0)';
++    };
++    setStyles();
++    setTimeout(setStyles, 500);
 +
-+function block(evt) {
-+    evt.preventDefault();
-+    evt.stopPropagation();
-+    evt.stopImmediatePropagation();
-+}
-+
-+// Listen on window (capture) so we run before YouTube's own handlers; YouTube may act on
-+// keydown or keyup, so both are swallowed.
-+window.addEventListener('keydown', (evt) => {
-+    if (!BACK_KEYS.includes(evt.keyCode)) return;
-+    if (!configRead('enableBackgroundOnBack')) return;
-+    if (swallowKeyUp) return block(evt);   // key repeat while held
-+    if (!isWatchingFullscreen()) return;
-+
-+    block(evt);
-+    swallowKeyUp = true;
-+
-+    enablePip();
-+
-+    waitForPipThen(() => {
-+        if (!configRead('backgroundShowPipWindow')) applyHiddenMode();
-+        if (configRead('backgroundShowToast')) {
-+            showToast(
-+                'Rixius',
-+                configRead('backgroundShowPipWindow')
-+                    ? 'Video en ventana pequeña. Usa el botón junto a la búsqueda para volver.'
-+                    : 'Video en segundo plano. Usa el botón junto a la búsqueda para volver.'
-+            );
++    const onPlay = () => {
++        video.removeEventListener('play', onPlay);
++        video.style.removeProperty('inset');
++        if (show) {
++            video.style.width = `${window.innerWidth / 3.5}px`;
++            video.style.height = `${window.innerHeight / 3.5}px`;
++            video.style.top = '68vh';
++            video.style.left = '68vw';
++            video.style.opacity = '1';
++        } else {
++            video.style.width = '1px';
++            video.style.height = '1px';
++            video.style.opacity = '0';
 +        }
-+    });
++        window.isPipPlaying = true;
++        if (configRead('backgroundShowToast')) {
++            showToast('Rixius', show
++                ? 'Video en ventana pequeña. Usa el botón junto a la búsqueda para volver.'
++                : 'Video en segundo plano. Usa el botón junto a la búsqueda para volver.');
++        }
++    };
++    video.addEventListener('play', onPlay);
++
++    setTimeout(() => {
++        const cfg = snapshot.config;
++        cfg.watchEndpoint.startTimeSeconds = snapshot.time;
++        ps.loadVideo(cfg);
++    }, 300);
++}
++
++// Note what is playing when Back is pressed (we never block the key).
++window.addEventListener('keydown', (evt) => {
++    if (!BACK_KEYS.includes(evt.keyCode) || !configRead('enableBackgroundOnBack')) return;
++    sawBackKey = true;
++    if (!watching()) return;
++    const ps = playerService();
++    const video = document.querySelector('video');
++    if (!ps || !ps.loadedPlaybackConfig) {
++        showToast('Rixius', 'Segundo plano: no se encontró el servicio del reproductor');
++        return;
++    }
++    pending = { config: ps.loadedPlaybackConfig, time: Math.floor(video.currentTime), at: Date.now() };
 +}, true);
 +
-+window.addEventListener('keyup', (evt) => {
-+    if (!swallowKeyUp || !BACK_KEYS.includes(evt.keyCode)) return;
-+    swallowKeyUp = false;
-+    block(evt);
-+}, true);
++// When YouTube closes the player right after that Back press, bring the video back.
++function observePlayer() {
++    const player = document.querySelector('ytlr-player');
++    if (!player) return setTimeout(observePlayer, 1000);
++    new MutationObserver(() => {
++        if (player.classList.contains('ytLrPlayerEnabled')) return;
++        let snapshot = pending;
++        pending = null;
++        if (!snapshot && !sawBackKey && configRead('enableBackgroundOnBack') && lastSnap &&
++            Date.now() - lastSnap.at < 1500) snapshot = lastSnap;
++        lastSnap = null;
++        if (!snapshot) return;
++        if (Date.now() - snapshot.at > 3000) return;   // closed for another reason
++        enterBackground(snapshot);
++    }).observe(player, { attributes: true, attributeFilter: ['class'] });
++}
++
++// Fallback snapshot (only used when Back never reaches the page as a key event).
++setInterval(() => {
++    if (!configRead('enableBackgroundOnBack') || sawBackKey || !watching()) return;
++    const ps = playerService();
++    const video = document.querySelector('video');
++    if (ps && ps.loadedPlaybackConfig) lastSnap = { config: ps.loadedPlaybackConfig, time: Math.floor(video.currentTime), at: Date.now() };
++}, 500);
++
++if (document.readyState === 'complete') observePlayer();
++else window.addEventListener('load', observePlayer);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
 index 0000000..8f23443
