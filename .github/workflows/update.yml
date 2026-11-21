@@ -54,6 +54,7 @@ jobs:
           git commit -m "Update userscript (upstream $(cat upstream-commit.txt | cut -c1-7))"
           git push
           curl -s https://purge.jsdelivr.net/gh/${{ github.repository }}@main/userScript.js
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository }}@main/rixius/dist/v1/version.json
 
       - name: Report patch conflict
         if: failure() && steps.patch.outcome == 'failure'

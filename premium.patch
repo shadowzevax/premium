@@ -143,18 +143,19 @@ index 0000000..8f23443
 +});
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..6dfda4c
+index 0000000..40412ef
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,58 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
 +import { buttonItem, showModal, showToast, overlayPanelItemListRenderer, overlayMessageRenderer } from '../ui/ytUI.js';
 +
 +const SCRIPT_URL = 'https://cdn.jsdelivr.net/gh/shadowzevax/premium@main/userScript.js';
-+// version.json via raw GitHub: ~5 min cache, so new builds are detected quickly.
-+const VERSION_URL = 'https://raw.githubusercontent.com/shadowzevax/premium/main/rixius/dist/v1/version.json';
++// The engine only allows cdn.jsdelivr.net (raw.githubusercontent / GitHub Pages are blocked).
++// The workflow purges this file on every publish; no-store skips the local cache.
++const VERSION_URL = 'https://cdn.jsdelivr.net/gh/shadowzevax/premium@main/rixius/dist/v1/version.json';
 +export const RIXIUS_BUILD = '__RIXIUS_BUILD__';
 +
 +function fetchLatest() {
