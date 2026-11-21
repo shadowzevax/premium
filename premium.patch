@@ -1,8 +1,8 @@
 diff --git a/mods/config.js b/mods/config.js
-index 07d9bdf..267cfb5 100644
+index 07d9bdf..fc8ddfb 100644
 --- a/mods/config.js
 +++ b/mods/config.js
-@@ -41,6 +41,15 @@ const defaultConfig = {
+@@ -41,6 +41,16 @@ const defaultConfig = {
    enablePatchingVideoPlayer: true,
    enableMPButton: true,
    enableSwapMPWithPIP: false,
@@ -11,19 +11,20 @@ index 07d9bdf..267cfb5 100644
 +  rixiusPerfMigrated: false,
 +  rixiusCodecMigrated: false,
 +  rixiusLookMigrated: false,
++  rixiusToastMigrated: false,
 +  rixiusAmoled: true,
 +  rixiusFastHold: true,
 +  backgroundShowPipWindow: true,
-+  backgroundShowToast: true,
++  backgroundShowToast: false,
    enablePreviews: true,
    enableHideWatchedVideos: false,
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..ce95977
+index 0000000..222346e
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,234 @@
+@@ -0,0 +1,244 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -39,6 +40,25 @@ index 0000000..ce95977
 +const isBack = (evt) => BACK_KEYS.includes(evt.keyCode) || BACK_NAMES.includes(evt.key);
 +let swallowKeyUp = false;
 +let nowPlayingTitle = '';
++
++// Is any player UI showing (controls/progress bar, settings or other panels)? Then Back must
++// keep its normal YouTube behaviour (close the panel / hide the controls).
++function visible(el) {
++    if (!el) return false;
++    const r = el.getBoundingClientRect();
++    if (r.width < 2 || r.height < 2) return false;
++    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
++        const cs = getComputedStyle(n);
++        if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05) return false;
++    }
++    return true;
++}
++function playerUiOpen() {
++    const sel = 'ytlr-redux-connect-ytlr-progress-bar, ytlr-progress-bar, ytlr-transport-controls, ' +
++        'ytlr-overlay-panel, ytlr-popup-panel, ytlr-dialog, [role="dialog"], [class*="ransportControls"]';
++    for (const el of document.querySelectorAll(sel)) if (visible(el)) return true;
++    return false;
++}
 +
 +function watching() {
 +    // Simple and robust: a video is actually playing (previews are disabled, so a playing
@@ -148,21 +168,10 @@ index 0000000..ce95977
 +    evt.stopImmediatePropagation();
 +}
 +
-+// TEMPORARY diagnostics: show which key arrives (not for arrows/OK/media keys).
-+const QUIET_KEYS = [37, 38, 39, 40, 13, 32, 179, 415, 19, 412, 417];
-+let lastDiag = 0;
-+function diag(evt) {
-+    if (!configRead('enableBackgroundOnBack') || QUIET_KEYS.includes(evt.keyCode)) return;
-+    if (Date.now() - lastDiag < 800) return;
-+    lastDiag = Date.now();
-+    showToast('Rixius · diagnóstico', `Tecla ${evt.keyCode} "${evt.key}" · video sonando: ${watching() ? 'sí' : 'no'} · atrás: ${isBack(evt) ? 'sí' : 'no'}`);
-+}
-+
 +function onBack(evt) {
-+    if (evt.type === 'keydown') diag(evt);
 +    if (!isBack(evt) || !configRead('enableBackgroundOnBack')) return;
 +    if (swallowKeyUp) return block(evt);       // auto-repeat while held
-+    if (!watching()) return;
++    if (!watching() || playerUiOpen()) return;
 +    block(evt);
 +    swallowKeyUp = true;
 +    nowPlayingTitle = '';
@@ -238,7 +247,9 @@ index 0000000..ce95977
 +    hideIfNeeded();
 +    attachEndedHandler();
 +    prepareUpNext();
-+    const title = nowPlayingTitle;          // real title comes from /next (prepareUpNext)
++    let title = '';
++    try { title = (navigator.mediaSession && navigator.mediaSession.metadata && navigator.mediaSession.metadata.title) || ''; } catch (_) { }
++    title = title || nowPlayingTitle;       // fallback: title from /next (prepareUpNext)
 +    if (!title) { if (box) box.remove(); return; }
 +    if (!box || box.dataset.title !== title) {
 +        if (box) box.remove();
@@ -308,10 +319,10 @@ index 0000000..8f23443
 +});
 diff --git a/mods/features/rixiusLook.js b/mods/features/rixiusLook.js
 new file mode 100644
-index 0000000..82182e8
+index 0000000..c1b8745
 --- /dev/null
 +++ b/mods/features/rixiusLook.js
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,79 @@
 +// Rixius look & feel:
 +// - AMOLED pure black backgrounds (toggle)
 +// - hide subtitles while the video is in mini player / background
@@ -328,6 +339,10 @@ index 0000000..82182e8
 +    // Re-loading Home on startup makes the app open slower (it loads Home twice).
 +    if (!configRead('launchToOnStartup')) configWrite('reloadHomeOnStartup', false);
 +    configWrite('rixiusLookMigrated', true);
++}
++if (!configRead('rixiusToastMigrated')) {
++    configWrite('backgroundShowToast', false);
++    configWrite('rixiusToastMigrated', true);
 +}
 +
 +// ---- styles
