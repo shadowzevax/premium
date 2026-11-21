@@ -58,20 +58,11 @@ jobs:
           if git diff --cached --quiet; then echo "No changes"; exit 0; fi
           git commit -m "Update userscript (upstream $(cat upstream-commit.txt | cut -c1-7))"
           git push
-          # Purge the script first and wait until the CDN serves the new build; only then
-          # purge version.json, so the in-app updater never announces a build it can't get.
-          CDN=https://cdn.jsdelivr.net/gh/${{ github.repository }}@main
-          PURGE=https://purge.jsdelivr.net/gh/${{ github.repository }}@main
-          for i in $(seq 1 20); do
-            curl -s "$PURGE/userScript.js" > /dev/null
-            sleep 45
-            if curl -s "$CDN/userScript.js" | grep -aq "$RIXIUS_BUILD"; then echo "script live"; break; fi
-          done
-          for i in $(seq 1 10); do
-            curl -s "$PURGE/rixius/dist/v1/version.json" > /dev/null
-            sleep 20
-            if curl -s "$CDN/rixius/dist/v1/version.json" | grep -q "$RIXIUS_BUILD"; then echo "version live"; break; fi
-          done
+          # One purge per file (repeated purges get throttled by jsDelivr for hours).
+          # If a purge is throttled, the CDN still refreshes @main on its own within 12h.
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository }}@main/userScript.js
+          sleep 30
+          curl -s https://purge.jsdelivr.net/gh/${{ github.repository }}@main/rixius/dist/v1/version.json
 
       - name: Report patch conflict
         if: failure() && steps.patch.outcome == 'failure'
