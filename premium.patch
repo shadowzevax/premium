@@ -21,10 +21,10 @@ index 07d9bdf..fc8ddfb 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..c6f32ad
+index 0000000..948851a
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,320 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -280,10 +280,10 @@ index 0000000..c6f32ad
 +    hideIfNeeded();
 +    attachEndedHandler();
 +    prepareUpNext();
-+    let title = '';
-+    try { title = (navigator.mediaSession && navigator.mediaSession.metadata && navigator.mediaSession.metadata.title) || ''; } catch (_) { }
-+    title = title || nowPlayingTitle;       // fallback: title from /next (prepareUpNext)
-+    if (!title) { if (box) box.remove(); return; }
++    // Title marquee disabled at the user's request.
++    if (box) box.remove();
++    return;
++    let title = nowPlayingTitle;
 +    if (!box || box.dataset.title !== title) {
 +        if (box) box.remove();
 +        box = document.createElement('div');
@@ -336,15 +336,6 @@ index 0000000..c6f32ad
 +        return;
 +    }
 +    const k = evt.keyCode;
-+    if (iconSelected) {
-+        if (k === 13 || k === 32) { block(evt); if (!evt.repeat) returnToVideo(); return; }
-+        if (k === 37 || k === 38 || k === 40 || isBack(evt)) { block(evt); setIconSelected(false); return; }
-+        if (k === 39) { block(evt); return; }
-+    } else if (k === 39 && focusInSearchBar()) {
-+        block(evt);
-+        setIconSelected(true);
-+        return;
-+    }
 +    // Hold OK ~1s anywhere while in background: return to the video.
 +    if (k === 13) {
 +        if (!evt.repeat) { okDownAt = Date.now(); okHandled = false; }
