@@ -912,6 +912,39 @@ index bf3d612..20939a9 100644
  InitI18next(window?.yt?.config_?.HL || navigator.language.replace(/(\-.*)/g, ''));
  
  function InitI18next(lng) {
+diff --git a/mods/ui/customGuideAction.js b/mods/ui/customGuideAction.js
+index 9d0b3a2..c0193af 100644
+--- a/mods/ui/customGuideAction.js
++++ b/mods/ui/customGuideAction.js
+@@ -116,4 +116,26 @@ configChangeEmitter.addEventListener('configChange', (e) => {
+             commandExecutor.executeFunction(new commandExecutor.commandFunction('reloadGuideAction'));
+         }
+     }
+-});
+\ No newline at end of file
++});
++// The first sidebar can be built before this script loads (unfiltered). Rebuild it as soon as
++// possible and keep it invisible until then, so disabled items never flash.
++(function earlyGuideReload() {
++    const hasFilter = (configRead('disabledSidebarContents') || []).length || configRead('disableChannelsOnSidebar') ||
++        (configRead('sidebarContentsOrder') || []).length;
++    if (!hasFilter) return;
++    const st = document.createElement('style');
++    st.textContent = 'ytlr-guide-response,ytlr-guide-renderer{visibility:hidden!important}';
++    (document.head || document.documentElement).appendChild(st);
++    const done = () => st.remove();
++    setTimeout(done, 4000);
++    let tries = 0;
++    (function tick() {
++        const ce = getCommandExecutor();
++        if (ce) {
++            try { ce.executeFunction(new ce.commandFunction('reloadGuideAction')); } catch (_) { }
++            setTimeout(done, 300);
++            return;
++        }
++        if (++tries < 80) setTimeout(tick, 50);
++    })();
++})();
 diff --git a/mods/ui/customUI.js b/mods/ui/customUI.js
 index baddfc9..7709f84 100644
 --- a/mods/ui/customUI.js
