@@ -592,15 +592,15 @@ index 0000000..f546289
 +
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..7130d90
+index 0000000..9fb18fb
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,129 @@
+@@ -0,0 +1,130 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
 +import { buttonItem, showModal, showToast, overlayPanelItemListRenderer, overlayMessageRenderer } from '../ui/ytUI.js';
-+import { storeBundle } from './selfUpdate.js';
++import { storeBundle, OWN_DATE } from './selfUpdate.js';
 +
 +const SCRIPT_URL = 'https://cdn.jsdelivr.net/gh/shadowzevax/premium@main/userScript.js';
 +// The engine only allows cdn.jsdelivr.net (raw.githubusercontent / GitHub Pages are blocked).
@@ -652,7 +652,8 @@ index 0000000..7130d90
 +export function checkForUpdates(manual) {
 +    if (manual) showToast('Rixius', 'Buscando actualizaciones...');
 +    fetchLatest().then(latest => {
-+        if (!latest.build || latest.build === RIXIUS_BUILD) {
++        // Only newer builds count: a stale (older) version.json from the CDN must not trigger an update.
++        if (!latest.build || latest.build === RIXIUS_BUILD || (latest.date && OWN_DATE !== 'dev' && latest.date <= OWN_DATE)) {
 +            checkApk(manual);
 +            return;
 +        }
@@ -727,7 +728,7 @@ index 0000000..7130d90
 +setTimeout(() => checkForUpdates(false), 4000);
 diff --git a/mods/features/selfUpdate.js b/mods/features/selfUpdate.js
 new file mode 100644
-index 0000000..a15a808
+index 0000000..0c78a24
 --- /dev/null
 +++ b/mods/features/selfUpdate.js
 @@ -0,0 +1,47 @@
@@ -737,7 +738,7 @@ index 0000000..a15a808
 +// here; on startup, if the stored build is newer than this one, run it instead and stop this one.
 +
 +const STORE_KEY = 'rixius.bundle';
-+const OWN_DATE = '__RIXIUS_BUILD_DATE__';
++export const OWN_DATE = '__RIXIUS_BUILD_DATE__';
 +
 +let stored = null;
 +try { stored = JSON.parse(localStorage[STORE_KEY] || 'null'); } catch (_) { stored = null; }
