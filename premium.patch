@@ -60,6 +60,67 @@ index 07d9bdf..50e6a8e 100644
    launchToOnStartup: null,
    reloadHomeOnStartup: true,
    disabledSidebarContents: [],
+diff --git a/mods/features/adSkip.js b/mods/features/adSkip.js
+new file mode 100644
+index 0000000..3bdede6
+--- /dev/null
++++ b/mods/features/adSkip.js
+@@ -0,0 +1,55 @@
++// Ad skipper for ads the JSON filter can't remove (e.g. videos sent from a phone: the cast
++// session schedules the ad). While an ad plays: mute, hide, jump to its end and press Skip.
++
++const SKIP_SEL = 'ytlr-skip-ad-renderer, ytlr-skip-button-renderer, [class*="skip-ad"], [class*="SkipAd"], ' +
++    '[class*="ytp-ad-skip"], [class*="ad-skip"]';
++const AD_SEL = '.ad-showing, .ad-interrupting, ytlr-ad-badge-renderer, ytlr-player-ad-overlay-renderer, ' +
++    'ytlr-ad-preview-renderer, [class*="ad-badge"], [class*="AdBadge"], [class*="ad-overlay"], ' +
++    '[class*="AdOverlay"], [class*="ad-progress"], [class*="AdProgress"]';
++
++function adPlaying(player) {
++    try {
++        const s = player && player.getPlayerStateObject && player.getPlayerStateObject();
++        if (s && (s.isAd || s.isAdPlaying || s.adPlaying)) return true;
++    } catch (_) { }
++    return !!document.querySelector(AD_SEL);
++}
++
++let skipping = false;
++let restoreMuted = false;
++let restoreRate = 1;
++
++function tick() {
++    const player = document.querySelector('.html5-video-player');
++    const video = document.querySelector('video');
++    if (!video) return;
++    if (adPlaying(player)) {
++        if (!skipping) {
++            skipping = true;
++            restoreMuted = video.muted;
++            restoreRate = video.playbackRate || 1;
++            document.body.classList.add('rixius-ad');
++        }
++        video.muted = true;
++        const skip = document.querySelector(SKIP_SEL);
++        if (skip) {
++            try { skip.click(); } catch (_) { }
++            skip.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 13, key: 'Enter', bubbles: true }));
++        }
++        if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.3) {
++            try { video.currentTime = video.duration - 0.1; } catch (_) { }
++        }
++        try { video.playbackRate = 16; } catch (_) { }
++    } else if (skipping) {
++        skipping = false;
++        video.muted = restoreMuted;
++        try { video.playbackRate = restoreRate; } catch (_) { }
++        document.body.classList.remove('rixius-ad');
++    }
++}
++
++const style = document.createElement('style');
++style.textContent = 'body.rixius-ad video{opacity:0!important}';
++(document.head || document.documentElement).appendChild(style);
++
++setInterval(tick, 250);
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
 index 0000000..73d1d0b
@@ -1082,7 +1143,7 @@ index 52f7547..e20f84a 100644
  <label for="__routeColor">Main Content Color: <input type="text" id="__routeColor"/></label>
  <div><small>Sponsor segments skipping - https://sponsor.ajay.app</small></div>
 diff --git a/mods/userScript.js b/mods/userScript.js
-index f8a9c6e..540d146 100644
+index f8a9c6e..ae9227c 100644
 --- a/mods/userScript.js
 +++ b/mods/userScript.js
 @@ -1,7 +1,10 @@
@@ -1096,7 +1157,15 @@ index f8a9c6e..540d146 100644
  import "./features/userAgentSpoofing.js";
  import "whatwg-fetch";
  import "core-js/proposals/object-getownpropertydescriptors";
-@@ -19,6 +22,8 @@ import "./features/moreSubtitles.js";
+@@ -9,6 +12,7 @@ import "core-js/proposals/object-getownpropertydescriptors";
+ import './translations/index.js'
+ import "./domrect-polyfill";
+ import "./features/adblock.js";
++import "./features/adSkip.js";
+ import "./features/sponsorblock.js";
+ import "./ui/ui.js";
+ import "./ui/speedUI.js";
+@@ -19,6 +23,8 @@ import "./features/moreSubtitles.js";
  import "./features/captionStylePersistence.js";
  import "./features/updater.js";
  import "./features/pictureInPicture.js";
