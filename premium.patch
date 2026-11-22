@@ -62,10 +62,10 @@ index 07d9bdf..50e6a8e 100644
    disabledSidebarContents: [],
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..222346e
+index 0000000..0494d28
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,268 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -270,7 +270,31 @@ index 0000000..222346e
 +    box.style.width = Math.max(120, right - left) + 'px';
 +}
 +
++// Captions: turn them off while in background/mini player, restore the same track on return.
++let savedCaptions = null;
++let wasPip = false;
++function syncCaptions() {
++    const pip = !!window.isPipPlaying;
++    if (pip === wasPip) return;
++    wasPip = pip;
++    const p = document.querySelector('.html5-video-player');
++    if (!p || !p.getOption || !p.setOption) return;
++    try {
++        if (pip) {
++            const t = p.getOption('captions', 'track');
++            if (t && t.languageCode) {
++                savedCaptions = t;
++                p.setOption('captions', 'track', {});
++            }
++        } else if (savedCaptions) {
++            p.setOption('captions', 'track', savedCaptions);
++            savedCaptions = null;
++        }
++    } catch (_) { }
++}
++
 +setInterval(() => {
++    syncCaptions();
 +    let box = document.getElementById(MARQUEE_ID);
 +    const pipButton = document.getElementById('tt-pip-button');
 +    if (!window.isPipPlaying || !pipButton) {
