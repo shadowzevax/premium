@@ -1,24 +1,65 @@
 diff --git a/mods/config.js b/mods/config.js
-index 07d9bdf..fc8ddfb 100644
+index 07d9bdf..50e6a8e 100644
 --- a/mods/config.js
 +++ b/mods/config.js
-@@ -41,6 +41,16 @@ const defaultConfig = {
-   enablePatchingVideoPlayer: true,
+@@ -19,11 +19,11 @@ const defaultConfig = {
+   enableDeArrowThumbnails: false,
+   focusContainerColor: '#0f0f0f',
+   routeColor: '#0f0f0f',
+-  enableFixedUI: (window.h5vcc) ? false : true,
++  enableFixedUI: false,
+   enableHqThumbnails: false,
+   enableChapters: true,
+   enableLongPress: true,
+-  enableShorts: true,
++  enableShorts: false,
+   dontCheckUpdateUntil: 0,
+   enableWhoIsWatchingMenu: false,
+   permanentlyEnableWhoIsWatchingMenu: false,
+@@ -33,27 +33,38 @@ const defaultConfig = {
+   enableCaptionStylePersistence: true,
+   captionStyleSettings: null,
+   captionRawKeyBackups: {},
+-  showWelcomeToast: true,
++  showWelcomeToast: false,
+   enablePreviousNextButtons: true,
+   enableSuperThanksButton: false,
+   enableAIAskButton: false,
+   enableSpeedControlsButton: true,
+-  enablePatchingVideoPlayer: true,
++  enablePatchingVideoPlayer: false,
    enableMPButton: true,
    enableSwapMPWithPIP: false,
-+  enableBackgroundOnBack: false,
+-  enablePreviews: true,
++  enableBackgroundOnBack: true,
 +  rixiusFastMode: true,
 +  rixiusPerfMigrated: false,
 +  rixiusCodecMigrated: false,
 +  rixiusLookMigrated: false,
 +  rixiusToastMigrated: false,
 +  rixiusAmoled: true,
-+  rixiusFastHold: true,
-+  backgroundShowPipWindow: true,
++  backgroundShowPipWindow: false,
 +  backgroundShowToast: false,
-   enablePreviews: true,
++  enablePreviews: false,
    enableHideWatchedVideos: false,
    hideWatchedVideosThreshold: 80,
+   hideWatchedVideosPages: [],
+   enableHideEndScreenCards: false,
+-  enableYouThereRenderer: true,
++  enableYouThereRenderer: false,
+   lastAnnouncementCheck: 0,
+   enableScreenDimming: false,
+   dimmingTimeout: 60,
+   dimmingOpacity: 0.5,
+-  enablePaidPromotionOverlay: true,
++  enablePaidPromotionOverlay: false,
+   speedSettingsIncrement: 0.25,
+   videoPreferredCodec: 'any',
++  preferredVideoCodec: 'vp9',
++  rixiusCodecMigrated2: false,
+   launchToOnStartup: null,
+   reloadHomeOnStartup: true,
+   disabledSidebarContents: [],
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
 index 0000000..27cc5ab
@@ -361,10 +402,10 @@ index 0000000..27cc5ab
 +}, true);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
-index 0000000..8f23443
+index 0000000..ccff149
 --- /dev/null
 +++ b/mods/features/fastMode.js
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,48 @@
 +// Rixius fast mode: make remote navigation feel instant on low-end TV boxes.
 +// - shortens UI transitions to 80ms (animations stay visible but no longer delay the remote)
 +// - one-time default: no video previews on focused thumbnails (heavy on TV boxes)
@@ -375,6 +416,12 @@ index 0000000..8f23443
 +if (!configRead('rixiusPerfMigrated')) {
 +    configWrite('enablePreviews', false);
 +    configWrite('rixiusPerfMigrated', true);
++}
++// Fix: the first codec migration compared against 'any' but the stored value was undefined,
++// so VP9 was never applied. Apply it now unless the user already picked a codec.
++if (!configRead('rixiusCodecMigrated2')) {
++    if (!['vp9', 'av01', 'avc1', 'any'].includes(configRead('preferredVideoCodec'))) configWrite('preferredVideoCodec', 'vp9');
++    configWrite('rixiusCodecMigrated2', true);
 +}
 +if (!configRead('rixiusCodecMigrated')) {
 +    if (configRead('preferredVideoCodec') === 'any') configWrite('preferredVideoCodec', 'vp9');
