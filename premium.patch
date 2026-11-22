@@ -1,8 +1,18 @@
 ﻿diff --git a/mods/config.js b/mods/config.js
-index 07d9bdf..50e6a8e 100644
+index 07d9bdf..944877c 100644
 --- a/mods/config.js
 +++ b/mods/config.js
-@@ -19,11 +19,11 @@ const defaultConfig = {
+@@ -3,7 +3,8 @@ const defaultConfig = {
+   enableAdBlock: true,
+   enableSponsorBlock: true,
+   enableSponsorBlockToasts: true,
+-  sponsorBlockManualSkips: ['intro', 'outro', 'filler'],
++  sponsorBlockManualSkips: [],
++    rixiusSkipMigrated: false,
+   enableSponsorBlockSponsor: true,
+   enableSponsorBlockIntro: true,
+   enableSponsorBlockOutro: true,
+@@ -19,11 +20,11 @@ const defaultConfig = {
    enableDeArrowThumbnails: false,
    focusContainerColor: '#0f0f0f',
    routeColor: '#0f0f0f',
@@ -16,7 +26,7 @@ index 07d9bdf..50e6a8e 100644
    dontCheckUpdateUntil: 0,
    enableWhoIsWatchingMenu: false,
    permanentlyEnableWhoIsWatchingMenu: false,
-@@ -33,27 +33,38 @@ const defaultConfig = {
+@@ -33,27 +34,38 @@ const defaultConfig = {
    enableCaptionStylePersistence: true,
    captionStyleSettings: null,
    captionRawKeyBackups: {},
@@ -470,10 +480,10 @@ index 0000000..ccff149
 +});
 diff --git a/mods/features/rixiusLook.js b/mods/features/rixiusLook.js
 new file mode 100644
-index 0000000..bae5a8f
+index 0000000..798363e
 --- /dev/null
 +++ b/mods/features/rixiusLook.js
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,66 @@
 +// Rixius look & feel:
 +// - AMOLED pure black backgrounds (toggle)
 +// - hide subtitles while the video is in mini player / background
@@ -490,6 +500,11 @@ index 0000000..bae5a8f
 +    // Re-loading Home on startup makes the app open slower (it loads Home twice).
 +    if (!configRead('launchToOnStartup')) configWrite('reloadHomeOnStartup', false);
 +    configWrite('rixiusLookMigrated', true);
++}
++// SponsorBlock: skip intros/outros automatically (the manual 'Saltar' button could exit the video).
++if (!configRead('rixiusSkipMigrated')) {
++    configWrite('sponsorBlockManualSkips', []);
++    configWrite('rixiusSkipMigrated', true);
 +}
 +if (!configRead('rixiusToastMigrated')) {
 +    configWrite('backgroundShowToast', false);
