@@ -480,10 +480,10 @@ index 0000000..ccff149
 +});
 diff --git a/mods/features/rixiusLook.js b/mods/features/rixiusLook.js
 new file mode 100644
-index 0000000..798363e
+index 0000000..f546289
 --- /dev/null
 +++ b/mods/features/rixiusLook.js
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,73 @@
 +// Rixius look & feel:
 +// - AMOLED pure black backgrounds (toggle)
 +// - hide subtitles while the video is in mini player / background
@@ -522,6 +522,13 @@ index 0000000..798363e
 +body.rixius-pip ytlr-player [class*="aption"], body.rixius-pip ytlr-player [class*="ubtitle"],
 +body.rixius-pip [class*="caption-window"], body.rixius-pip [id*="caption"] {
 +  display: none !important;
++}
++body.rixius-pip ytlr-player, body.rixius-pip ytlr-player *,
++body.rixius-pip .html5-video-player, body.rixius-pip .html5-video-player * {
++  visibility: hidden !important;
++}
++body.rixius-pip ytlr-player video, body.rixius-pip .html5-video-player video {
++  visibility: visible !important;
 +}`;
 +    if (configRead('rixiusAmoled')) {
 +        s += `
