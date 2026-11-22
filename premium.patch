@@ -474,10 +474,10 @@ index 0000000..c6b38b7
 +
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..15d9d69
+index 0000000..2d750cc
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,91 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
@@ -507,7 +507,9 @@ index 0000000..15d9d69
 +    showToast('Rixius', 'Actualizando...');
 +    // Preferred: download the exact build from its immutable commit-pinned URL (never stale)
 +    // and keep it locally; selfUpdate.js runs it on the next start.
-+    if (latest && latest.url) {
++    let bootFailed = null;
++    try { bootFailed = localStorage['rixius.bootFailed']; } catch (_) { }
++    if (latest && latest.url && bootFailed !== latest.build) {
 +        fetch(latest.url, { cache: 'no-store' })
 +            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
 +            .then(code => {
@@ -569,10 +571,10 @@ index 0000000..15d9d69
 +setTimeout(() => checkForUpdates(false), 4000);
 diff --git a/mods/features/selfUpdate.js b/mods/features/selfUpdate.js
 new file mode 100644
-index 0000000..e37f53e
+index 0000000..a15a808
 --- /dev/null
 +++ b/mods/features/selfUpdate.js
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,47 @@
 +// Rixius self-update bootstrap. MUST be the first import of userScript.js.
 +// The APK always loads ".../premium@main/userScript.js", which jsDelivr may keep stale for hours.
 +// The in-app updater downloads newer builds from immutable commit-pinned URLs and stores them
@@ -588,9 +590,18 @@ index 0000000..e37f53e
 +    window.__rixiusBooted = true;
 +    let ok = false;
 +    try {
-+        (0, eval)(stored.code);
++        // youtube.com/tv enforces Trusted Types (require-trusted-types-for 'script'):
++        // a plain string passed to eval is blocked, so wrap it in our own policy.
++        let code = stored.code;
++        if (window.trustedTypes && window.trustedTypes.createPolicy) {
++            const policy = window.trustedTypes.createPolicy('rixius-boot', { createScript: (s) => s });
++            code = policy.createScript(code);
++        }
++        (0, eval)(code);
 +        ok = true;
 +    } catch (e) {
++        // Remember the failing build so the updater does not offer it in a loop.
++        try { localStorage['rixius.bootFailed'] = stored.build; } catch (_) { }
 +        try { delete localStorage[STORE_KEY]; } catch (_) { }
 +    }
 +    if (ok) {
