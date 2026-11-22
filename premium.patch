@@ -1,4 +1,4 @@
-diff --git a/mods/config.js b/mods/config.js
+﻿diff --git a/mods/config.js b/mods/config.js
 index 07d9bdf..50e6a8e 100644
 --- a/mods/config.js
 +++ b/mods/config.js
@@ -62,16 +62,16 @@ index 07d9bdf..50e6a8e 100644
    disabledSidebarContents: [],
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..27cc5ab
+index 0000000..222346e
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,334 @@
+@@ -0,0 +1,244 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
 +
 +import { configRead } from '../config.js';
-+import { enablePip, pipToFullscreen } from './pictureInPicture.js';
++import { enablePip } from './pictureInPicture.js';
 +import { showToast } from '../ui/ytUI.js';
 +
 +// 166 = BrowserBack (Android remote Back in Chromium/Cobalt), 27 = Escape, 8 = Backspace,
@@ -162,40 +162,7 @@ index 0000000..27cc5ab
 +    return ps?.loadedPlaybackConfig?.watchEndpoint?.videoId;
 +}
 +
-+// Capture titles and "up next" from the responses YouTube already parses (no extra requests).
-+const titles = {};            // videoId -> title
-+const upNextById = {};        // videoId -> autoplay endpoint
-+(function hookParse() {
-+    const prevParse = JSON.parse;
-+    const parse = function () {
-+        const r = prevParse.apply(this, arguments);
-+        try {
-+            if (r && typeof r === 'object') {
-+                const vd = r.videoDetails;
-+                if (vd && vd.videoId && vd.title) titles[vd.videoId] = vd.title;
-+                const wn = r.contents && r.contents.singleColumnWatchNextResults;
-+                if (wn) {
-+                    const set = wn.autoplay && wn.autoplay.autoplay && wn.autoplay.autoplay.sets && wn.autoplay.autoplay.sets[0];
-+                    const next = set && (set.autoplayVideo || (set.nextVideoRenderer && set.nextVideoRenderer.maybeHistoryEndpointRenderer && set.nextVideoRenderer.maybeHistoryEndpointRenderer.endpoint));
-+                    const cur = r.currentVideoEndpoint && r.currentVideoEndpoint.watchEndpoint && r.currentVideoEndpoint.watchEndpoint.videoId;
-+                    if (cur && next && next.watchEndpoint) upNextById[cur] = next;
-+                }
-+            }
-+        } catch (_) { }
-+        return r;
-+    };
-+    JSON.parse = parse;
-+    window.JSON.parse = parse;
-+    for (const key in window._yttv) {
-+        const o = window._yttv[key];
-+        if (o && o.JSON && o.JSON.parse) o.JSON.parse = parse;
-+    }
-+})();
-+
 +function prepareUpNext() {
-+    const cid = currentVideoId();
-+    if (cid && titles[cid]) nowPlayingTitle = titles[cid];
-+    if (cid && upNextById[cid] && upNextFor !== cid) { upNextFor = cid; upNext = upNextById[cid]; return; }
 +    const id = currentVideoId();
 +    if (!id || upNextFor === id) return;
 +    upNextFor = id;
@@ -343,63 +310,6 @@ index 0000000..27cc5ab
 +document.addEventListener('keydown', (evt) => {
 +    if (evt.keyCode === 13 && watching()) { nowPlayingTitle = ''; upNextFor = null; }
 +}, true);
-+
-+
-+// ---- Reaching the "return to video" icon with the remote.
-+// The icon is drawn outside YouTube's focus system, so the remote can't reach it.
-+// With focus on the search bar: Right highlights the icon, OK returns to the video, Left goes back.
-+let iconSelected = false;
-+const iconStyle = document.createElement('style');
-+iconStyle.textContent = `#tt-pip-button.rixius-selected{transform:scale(1.15);filter:brightness(1.6);
-+  box-shadow:0 0 0 .25em #fff;border-radius:50%;}`;
-+(document.head || document.documentElement).appendChild(iconStyle);
-+
-+function setIconSelected(on) {
-+    iconSelected = on;
-+    const b = document.getElementById('tt-pip-button');
-+    if (b) b.classList.toggle('rixius-selected', on);
-+}
-+
-+// Only the search text field (the last item of the bar), never the microphone: Right from the
-+// microphone must keep moving YouTube's focus to "Search".
-+function focusInSearchBar() {
-+    const a = document.activeElement;
-+    if (!a || !a.closest || !a.closest('ytlr-search-bar')) return false;
-+    if (a.closest('ytlr-search-voice') || a.closest('#tt-pip-button')) return false;
-+    if (a.closest('[class*="oice"], [class*="Mic"], [class*="mic"]')) return false;
-+    return true;
-+}
-+
-+function returnToVideo() {
-+    setIconSelected(false);
-+    try { pipToFullscreen(); } catch (_) { }
-+}
-+
-+let okDownAt = 0, okHandled = false;
-+window.addEventListener('keydown', (evt) => {
-+    if (!window.isPipPlaying || !document.getElementById('tt-pip-button')) {
-+        if (iconSelected) setIconSelected(false);
-+        return;
-+    }
-+    const k = evt.keyCode;
-+    if (iconSelected) {
-+        if (k === 13 || k === 32) { block(evt); if (!evt.repeat) returnToVideo(); return; }
-+        if (k === 37 || k === 38 || k === 40 || isBack(evt)) { block(evt); setIconSelected(false); return; }
-+        if (k === 39) { block(evt); return; }
-+    } else if (k === 39 && focusInSearchBar()) {
-+        block(evt);
-+        setIconSelected(true);
-+        return;
-+    }
-+    // Hold OK ~1s anywhere while in background: return to the video.
-+    if (k === 13) {
-+        if (!evt.repeat) { okDownAt = Date.now(); okHandled = false; }
-+        else if (!okHandled && Date.now() - okDownAt > 900) { okHandled = true; block(evt); returnToVideo(); }
-+    }
-+}, true);
-+window.addEventListener('keyup', (evt) => {
-+    if (evt.keyCode === 13 && okHandled) { block(evt); okHandled = false; }
-+}, true);
 diff --git a/mods/features/fastMode.js b/mods/features/fastMode.js
 new file mode 100644
 index 0000000..ccff149
@@ -456,10 +366,10 @@ index 0000000..ccff149
 +});
 diff --git a/mods/features/rixiusLook.js b/mods/features/rixiusLook.js
 new file mode 100644
-index 0000000..c6b38b7
+index 0000000..bae5a8f
 --- /dev/null
 +++ b/mods/features/rixiusLook.js
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,61 @@
 +// Rixius look & feel:
 +// - AMOLED pure black backgrounds (toggle)
 +// - hide subtitles while the video is in mini player / background
@@ -489,7 +399,9 @@ index 0000000..c6b38b7
 +    let s = `
 +body.rixius-pip [class*="aption-window"], body.rixius-pip [class*="aptionWindow"],
 +body.rixius-pip [class*="aptions-text"], body.rixius-pip [class*="aptionsText"],
-+body.rixius-pip ytlr-captions-renderer, body.rixius-pip .ytp-caption-window-container {
++body.rixius-pip ytlr-captions-renderer, body.rixius-pip .ytp-caption-window-container,
++body.rixius-pip ytlr-player [class*="aption"], body.rixius-pip ytlr-player [class*="ubtitle"],
++body.rixius-pip [class*="caption-window"], body.rixius-pip [id*="caption"] {
 +  display: none !important;
 +}`;
 +    if (configRead('rixiusAmoled')) {
