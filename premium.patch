@@ -133,10 +133,10 @@ index 0000000..3bdede6
 +setInterval(tick, 250);
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..73d1d0b
+index 0000000..2375a35
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,298 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -368,6 +368,17 @@ index 0000000..73d1d0b
 +    if (pip === wasPip) return;
 +    wasPip = pip;
 +    const p = document.querySelector('.html5-video-player');
++    // TEMP diagnostic (remove): which captions API does this player expose?
++    if (pip && p) {
++        try {
++            let tr = '-';
++            try { tr = JSON.stringify(p.getOption && p.getOption('captions', 'track')).slice(0, 60); } catch (e) { tr = 'err'; }
++            const fns = ['getOption', 'setOption', 'toggleSubtitles', 'toggleSubtitlesOn', 'isSubtitlesOn', 'unloadModule', 'loadModule', 'getSubtitlesUserSettings']
++                .filter(n => typeof p[n] === 'function').join(',');
++            const keys = Object.keys(localStorage).filter(k => /caption|subtit/i.test(k)).join(',');
++            showToast('Diag subtítulos', 'track=' + tr + ' | fn=' + fns + ' | ls=' + keys);
++        } catch (_) { }
++    }
 +    if (!p || !p.getOption || !p.setOption) return;
 +    try {
 +        if (pip) {
