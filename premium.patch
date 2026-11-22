@@ -552,10 +552,10 @@ index 0000000..798363e
 +
 diff --git a/mods/features/rixiusUpdater.js b/mods/features/rixiusUpdater.js
 new file mode 100644
-index 0000000..2d750cc
+index 0000000..7130d90
 --- /dev/null
 +++ b/mods/features/rixiusUpdater.js
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,129 @@
 +// Rixius updater: checks the published build and applies it by restarting the app UI.
 +// The engine (APK) rarely changes; the script (ad block, features) is what updates.
 +
@@ -613,7 +613,7 @@ index 0000000..2d750cc
 +    if (manual) showToast('Rixius', 'Buscando actualizaciones...');
 +    fetchLatest().then(latest => {
 +        if (!latest.build || latest.build === RIXIUS_BUILD) {
-+            if (manual) showToast('Rixius', 'Ya tienes la última versión');
++            checkApk(manual);
 +            return;
 +        }
 +        // Already tried this build recently but the CDN still served the old script:
@@ -642,6 +642,44 @@ index 0000000..2d750cc
 +        if (manual) showToast('Rixius', 'No se pudo comprobar. Revisa tu conexión.');
 +    });
 +}
++
++// ---- APK updates: rixius/dist/v1/apk.json = { rev, arm, arm64, notes }; installs via the engine.
++const APK_URL = 'https://cdn.jsdelivr.net/gh/shadowzevax/premium@main/rixius/dist/v1/apk.json';
++function installedRev() {
++    try {
++        const v = window.h5vcc && window.h5vcc.tizentube && window.h5vcc.tizentube.GetVersion();
++        const m = /-r(\d+)/.exec(v || '');
++        return m ? parseInt(m[1], 10) : 0;
++    } catch (_) { return 0; }
++}
++function checkApk(manual) {
++    const tt = window.h5vcc && window.h5vcc.tizentube;
++    if (!tt || !tt.InstallAppFromURL) { if (manual) showToast('Rixius', 'Ya tienes la última versión'); return; }
++    fetch(APK_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.json()).then(apk => {
++        const cur = installedRev();
++        if (!apk.rev || !cur || apk.rev <= cur) { if (manual) showToast('Rixius', 'Ya tienes la última versión'); return; }
++        let arch = '';
++        try { arch = tt.GetArchitecture ? tt.GetArchitecture() : ''; } catch (_) { }
++        window.__rixiusApkUrl = arch === 'arm64-v8a' ? apk.arm64 : apk.arm;
++        showModal(
++            { title: 'Nueva versión de la app (r' + apk.rev + ')', subtitle: apk.notes || 'Se descarga e instala encima; tu sesión y ajustes se conservan.' },
++            overlayPanelItemListRenderer([
++                buttonItem({ title: 'Instalar ahora', subtitle: 'Descarga ~100 MB y abre el instalador' }, { icon: 'DOWN_ARROW' },
++                    [{ customAction: { action: 'RIXIUS_APK_INSTALL' } }, { signalAction: { signal: 'POPUP_BACK' } }]),
++                buttonItem({ title: 'Más tarde' }, { icon: 'SEARCH_HISTORY' },
++                    [{ signalAction: { signal: 'POPUP_BACK' } }]),
++                overlayMessageRenderer(' ')
++            ]),
++            'rixius-apk-modal',
++            false
++        );
++    }).catch(() => { if (manual) showToast('Rixius', 'Ya tienes la última versión'); });
++}
++window.__rixiusInstallApk = () => {
++    if (!window.__rixiusApkUrl) return;
++    showToast('Rixius', 'Descargando la app... el instalador se abrirá solo (1-2 min).');
++    try { window.h5vcc.tizentube.InstallAppFromURL(window.__rixiusApkUrl); } catch (_) { showToast('Rixius', 'No se pudo iniciar la descarga.'); }
++};
 +
 +window.__rixiusApplyUpdate = () => applyUpdate(window.__rixiusPendingBuild);
 +
@@ -833,7 +871,7 @@ index 0000000..d62bda0
 +    }
 +}, CHECK_MS);
 diff --git a/mods/resolveCommand.js b/mods/resolveCommand.js
-index 3d2d10d..6f2a8bb 100644
+index 3d2d10d..57c83fd 100644
 --- a/mods/resolveCommand.js
 +++ b/mods/resolveCommand.js
 @@ -3,7 +3,7 @@ import { enablePip } from './features/pictureInPicture.js';
@@ -845,7 +883,7 @@ index 3d2d10d..6f2a8bb 100644
  import { t } from 'i18next';
  import { requestNextAndNavigateChannel, getFeedbackPanelTokens, sendFeedbackToken } from './utils/innerTubeCalls.js';
  import qrcode from 'qrcode-npm';
-@@ -236,15 +236,21 @@ function customAction(action, parameters) {
+@@ -236,15 +236,24 @@ function customAction(action, parameters) {
              window.h5vcc.tizentube.EnterPIP();
              break;
          case 'SHOW_TOAST':
@@ -865,12 +903,15 @@ index 3d2d10d..6f2a8bb 100644
 +        case 'RIXIUS_RESTART':
 +            location.reload();
 +            break;
++        case 'RIXIUS_APK_INSTALL':
++            window.__rixiusInstallApk();
++            break;
 +        case 'RIXIUS_UPDATE_NOW':
 +            window.__rixiusApplyUpdate();
              break;
          case 'CHECK_FOR_UPDATES':
              checkForUpdates(true);
-@@ -266,7 +272,7 @@ function customAction(action, parameters) {
+@@ -266,7 +275,7 @@ function customAction(action, parameters) {
                              signal: 'POPUP_BACK'
                          }
                      });
