@@ -62,10 +62,10 @@ index 07d9bdf..50e6a8e 100644
    disabledSidebarContents: [],
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..0494d28
+index 0000000..db9bd65
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,268 @@
+@@ -0,0 +1,282 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -273,7 +273,21 @@ index 0000000..0494d28
 +// Captions: turn them off while in background/mini player, restore the same track on return.
 +let savedCaptions = null;
 +let wasPip = false;
++let captionsVideo = null;
 +function syncCaptions() {
++    // Every new video starts with captions off; the user turns them on manually.
++    const vid = currentVideoId();
++    if (vid && vid !== captionsVideo) {
++        const p = document.querySelector('.html5-video-player');
++        if (p && p.getOption && p.setOption) {
++            captionsVideo = vid;
++            savedCaptions = null;
++            try {
++                const t = p.getOption('captions', 'track');
++                if (t && t.languageCode) p.setOption('captions', 'track', {});
++            } catch (_) { }
++        }
++    }
 +    const pip = !!window.isPipPlaying;
 +    if (pip === wasPip) return;
 +    wasPip = pip;
