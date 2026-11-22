@@ -62,10 +62,10 @@ index 07d9bdf..50e6a8e 100644
    disabledSidebarContents: [],
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..db9bd65
+index 0000000..73d1d0b
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,282 @@
+@@ -0,0 +1,287 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -277,15 +277,20 @@ index 0000000..db9bd65
 +function syncCaptions() {
 +    // Every new video starts with captions off; the user turns them on manually.
 +    const vid = currentVideoId();
-+    if (vid && vid !== captionsVideo) {
-+        const p = document.querySelector('.html5-video-player');
-+        if (p && p.getOption && p.setOption) {
++    // Remember the user's choice (on/off) across videos and app restarts; default off.
++    const p0 = document.querySelector('.html5-video-player');
++    if (vid && p0 && p0.getOption && p0.setOption && !window.isPipPlaying) {
++        let t = null;
++        try { t = p0.getOption('captions', 'track'); } catch (_) { }
++        const on = !!(t && t.languageCode);
++        if (vid !== captionsVideo) {
 +            captionsVideo = vid;
 +            savedCaptions = null;
-+            try {
-+                const t = p.getOption('captions', 'track');
-+                if (t && t.languageCode) p.setOption('captions', 'track', {});
-+            } catch (_) { }
++            let pref = null;
++            try { pref = localStorage['rixius.captions']; } catch (_) { }
++            if (pref !== 'on' && on) { try { p0.setOption('captions', 'track', {}); } catch (_) { } }
++        } else if (!savedCaptions) {
++            try { localStorage['rixius.captions'] = on ? 'on' : 'off'; } catch (_) { }
 +        }
 +    }
 +    const pip = !!window.isPipPlaying;
