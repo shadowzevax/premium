@@ -133,10 +133,10 @@ index 0000000..3bdede6
 +setInterval(tick, 250);
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..2375a35
+index 0000000..4e18bbc
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,320 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -307,6 +307,7 @@ index 0000000..2375a35
 +        return;
 +    }
 +    const video = document.querySelector('video');
++    syncCaptions();
 +    hideIfNeeded();
 +    attachEndedHandler();
 +    prepareUpNext();
@@ -341,57 +342,78 @@ index 0000000..2375a35
 +    box.style.width = Math.max(120, right - left) + 'px';
 +}
 +
-+// Captions: turn them off while in background/mini player, restore the same track on return.
-+let savedCaptions = null;
++// Captions (YouTube TV API: getOption/setOption('captions','track'), isSubtitlesOn, toggleSubtitlesOn).
++// - Remembers the user's on/off choice (only changes made with the TV remote count; a phone
++//   connected via cast doesn't overwrite it). Every new video starts in that state. Default off.
++// - In background/mini player they're turned off and restored on return.
++const CAP_KEY = 'rixius.captions';
++let savedCaptions = null;      // track to restore after background mode
 +let wasPip = false;
 +let captionsVideo = null;
-+function syncCaptions() {
-+    // Every new video starts with captions off; the user turns them on manually.
-+    const vid = currentVideoId();
-+    // Remember the user's choice (on/off) across videos and app restarts; default off.
-+    const p0 = document.querySelector('.html5-video-player');
-+    if (vid && p0 && p0.getOption && p0.setOption && !window.isPipPlaying) {
-+        let t = null;
-+        try { t = p0.getOption('captions', 'track'); } catch (_) { }
-+        const on = !!(t && t.languageCode);
-+        if (vid !== captionsVideo) {
-+            captionsVideo = vid;
-+            savedCaptions = null;
-+            let pref = null;
-+            try { pref = localStorage['rixius.captions']; } catch (_) { }
-+            if (pref !== 'on' && on) { try { p0.setOption('captions', 'track', {}); } catch (_) { } }
-+        } else if (!savedCaptions) {
-+            try { localStorage['rixius.captions'] = on ? 'on' : 'off'; } catch (_) { }
-+        }
-+    }
-+    const pip = !!window.isPipPlaying;
-+    if (pip === wasPip) return;
-+    wasPip = pip;
++let lastKey = 0;
++let lastOn = null;
++window.addEventListener('keydown', () => { lastKey = Date.now(); }, true);
++
++function capPlayer() {
 +    const p = document.querySelector('.html5-video-player');
-+    // TEMP diagnostic (remove): which captions API does this player expose?
-+    if (pip && p) {
-+        try {
-+            let tr = '-';
-+            try { tr = JSON.stringify(p.getOption && p.getOption('captions', 'track')).slice(0, 60); } catch (e) { tr = 'err'; }
-+            const fns = ['getOption', 'setOption', 'toggleSubtitles', 'toggleSubtitlesOn', 'isSubtitlesOn', 'unloadModule', 'loadModule', 'getSubtitlesUserSettings']
-+                .filter(n => typeof p[n] === 'function').join(',');
-+            const keys = Object.keys(localStorage).filter(k => /caption|subtit/i.test(k)).join(',');
-+            showToast('Diag subtítulos', 'track=' + tr + ' | fn=' + fns + ' | ls=' + keys);
-+        } catch (_) { }
-+    }
-+    if (!p || !p.getOption || !p.setOption) return;
-+    try {
++    return p && p.getOption && p.setOption ? p : null;
++}
++function capOn(p) {
++    try { if (p.isSubtitlesOn) return !!p.isSubtitlesOn(); } catch (_) { }
++    try { const t = p.getOption('captions', 'track'); return !!(t && t.languageCode); } catch (_) { return false; }
++}
++function capOff(p) {
++    try { p.setOption('captions', 'track', {}); } catch (_) { }
++    setTimeout(() => { if (capOn(p)) { try { p.setOption('captions', 'track', { languageCode: '' }); } catch (_) { } } }, 300);
++}
++function capRestore(p, track) {
++    try { if (track && track.languageCode) p.setOption('captions', 'track', track); } catch (_) { }
++    setTimeout(() => { if (!capOn(p) && p.toggleSubtitlesOn) { try { p.toggleSubtitlesOn(); } catch (_) { } } }, 300);
++}
++function capPref() { try { return localStorage[CAP_KEY] === 'on'; } catch (_) { return false; } }
++
++function syncCaptions() {
++    const p = capPlayer();
++    if (!p) return;
++    const pip = !!window.isPipPlaying;
++    if (pip !== wasPip) {
++        wasPip = pip;
 +        if (pip) {
-+            const t = p.getOption('captions', 'track');
-+            if (t && t.languageCode) {
-+                savedCaptions = t;
-+                p.setOption('captions', 'track', {});
++            if (capOn(p)) {
++                try { savedCaptions = p.getOption('captions', 'track'); } catch (_) { savedCaptions = null; }
++                capOff(p);
 +            }
 +        } else if (savedCaptions) {
-+            p.setOption('captions', 'track', savedCaptions);
++            capRestore(p, savedCaptions);
 +            savedCaptions = null;
 +        }
-+    } catch (_) { }
++        lastOn = null;
++        return;
++    }
++    if (pip) return;
++    const vid = currentVideoId();
++    const on = capOn(p);
++    if (vid && vid !== captionsVideo) {
++        // New video: apply the remembered choice.
++        captionsVideo = vid;
++        const want = capPref();
++        if (on && !want) capOff(p);
++        else if (!on && want) {
++            let track = null;
++            try { track = JSON.parse(localStorage[CAP_KEY + '.track'] || 'null'); } catch (_) { }
++            capRestore(p, track);
++        }
++        lastOn = want;
++        return;
++    }
++    if (lastOn !== null && on !== lastOn && Date.now() - lastKey < 4000) {
++        // Changed with the TV remote: remember it.
++        try {
++            localStorage[CAP_KEY] = on ? 'on' : 'off';
++            if (on) localStorage[CAP_KEY + '.track'] = JSON.stringify(p.getOption('captions', 'track'));
++        } catch (_) { }
++    }
++    lastOn = on;
 +}
 +
 +setInterval(() => {
