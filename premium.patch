@@ -21,10 +21,10 @@ index 07d9bdf..fc8ddfb 100644
    hideWatchedVideosThreshold: 80,
 diff --git a/mods/features/backToPip.js b/mods/features/backToPip.js
 new file mode 100644
-index 0000000..c6f32ad
+index 0000000..27cc5ab
 --- /dev/null
 +++ b/mods/features/backToPip.js
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,334 @@
 +// Back button -> same as the official "Mini Player" button (enablePip): YouTube goes back, the
 +// video keeps playing and a "return to video" button appears next to Search.
 +// Optional: hide the corner video (audio only). Shows the playing title as a scrolling marquee.
@@ -319,9 +319,14 @@ index 0000000..c6f32ad
 +    if (b) b.classList.toggle('rixius-selected', on);
 +}
 +
++// Only the search text field (the last item of the bar), never the microphone: Right from the
++// microphone must keep moving YouTube's focus to "Search".
 +function focusInSearchBar() {
 +    const a = document.activeElement;
-+    return !!(a && a.closest && a.closest('ytlr-search-bar'));
++    if (!a || !a.closest || !a.closest('ytlr-search-bar')) return false;
++    if (a.closest('ytlr-search-voice') || a.closest('#tt-pip-button')) return false;
++    if (a.closest('[class*="oice"], [class*="Mic"], [class*="mic"]')) return false;
++    return true;
 +}
 +
 +function returnToVideo() {
